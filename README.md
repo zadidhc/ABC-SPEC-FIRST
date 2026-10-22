@@ -25,6 +25,7 @@ Siguiendo la metodología **Spec-First**, este repositorio contiene la arquitect
 ```text
 .
 ├── README.md                           # Documentación principal para GitHub
+├── INFORME_TECNICO_FINAL.md            # Informe técnico final consolidado de la Fase 1
 ├── specs/                              # Entregables técnicos oficiales de la Fase 1
 │   ├── 01-requisitos-casos-uso.md      # Requisitos funcionales/no funcionales y casos de uso
 │   ├── 02-modelo-dominio.md            # Modelo de dominio DDD y mapeo legado
