@@ -1,0 +1,815 @@
+openapi: 3.1.0
+info:
+  title: ABC Software Corp — Electronic Invoicing & Legacy Migration API
+  description: |
+    Especificación de Contratos de API para el sistema de facturación electrónica bajo normativa SUNAT (UBL 2.1)
+    y el módulo de migración de registros históricos de almacén de ABC Software Corp.
+    Fase 1: Enfoque Spec-First.
+  version: 1.0.0
+  contact:
+    name: Architecture Team — ABC Software Corp
+    email: architecture@example.com
+
+servers:
+  - url: https://api.example.com/v1
+    description: Servidor de Ejemplo / Producción Ficticio (RFC 2606)
+  - url: https://api-test.example.com/v1
+    description: Servidor de Ejemplo / Homologación Ficticio (RFC 2606)
+
+tags:
+  - name: Invoices
+    description: Operaciones de registro, validación, emisión electrónica y consulta de comprobantes.
+  - name: Migration
+    description: Ingesta, ejecución y trazabilidad histórica de registros legados de almacén.
+
+paths:
+  # ========================================================
+  # RECURSO: /invoices (CREAR Y VALIDAR / LISTAR)
+  # ========================================================
+  /invoices:
+    post:
+      tags:
+        - Invoices
+      summary: Registrar y validar una factura (CU-01)
+      description: |
+        Crea un comprobante tipo Factura ('01') en estado DRAFT o VALIDATED.
+        Ejecuta todas las reglas de negocio tributarias peruanas (RUC de 11 dígitos,
+        coherencia de tasas IGV, desglose de ISC según Catálogo 08 y cálculo de ICBPER).
+      operationId: createInvoice
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          description: Clave de idempotencia para prevenir duplicación accidental de facturas.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvoiceRequest'
+      responses:
+        '201':
+          description: Factura registrada y validada exitosamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceResponse'
+        '400':
+          description: Parámetros sintácticamente incorrectos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Error semántico o incumplimiento de reglas tributarias (RUC inválido, errores aritméticos).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Error interno del servidor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ========================================================
+  # RECURSO: /invoices/{id} (CONSULTAR POR ID)
+  # ========================================================
+  /invoices/{id}:
+    get:
+      tags:
+        - Invoices
+      summary: Obtener detalle y estado tributario de una factura (CU-03)
+      description: Recupera la representación integral del comprobante, incluyendo totales, estado y metadatos del CDR.
+      operationId: getInvoiceById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador único universal (UUID) de la factura.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Factura encontrada exitosamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceResponse'
+        '404':
+          description: Factura no encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ========================================================
+  # RECURSO: /invoices/{id}/issuance (SOLICITAR EMISIÓN ELECTRÓNICA)
+  # ========================================================
+  /invoices/{id}/issuance:
+    post:
+      tags:
+        - Invoices
+      summary: Solicitar emisión electrónica ante OSE / SUNAT (CU-02)
+      description: |
+        Asigna el correlativo formal definitivo, genera el XML OASIS UBL 2.1,
+        aplica la firma digital XAdES-BES con el certificado de la empresa,
+        empaqueta en ZIP y envía al webservice de la OSE/SUNAT, recibiendo el CDR.
+      operationId: issueInvoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID de la factura en estado DRAFT o VALIDATED.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueInvoiceRequest'
+      responses:
+        '200':
+          description: Comprobante emitido y procesado por SUNAT / OSE.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceResponse'
+        '409':
+          description: Conflicto de estado (la factura ya fue emitida previamente o se encuentra anulada).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Rechazo tributario reportado por SUNAT u OSE dentro del CDR.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '502':
+          description: Falla de conectividad o tiempo de espera con los servidores de OSE / SUNAT.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ========================================================
+  # RECURSO: /invoices/{id}/xml (DESCARGAR XML UBL 2.1)
+  # ========================================================
+  /invoices/{id}/xml:
+    get:
+      tags:
+        - Invoices
+      summary: Descargar XML firmado en estándar UBL 2.1
+      description: Retorna el archivo XML del comprobante con la firma digital embebida.
+      operationId: downloadInvoiceXml
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Archivo XML firmado.
+          content:
+            application/xml:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Factura o archivo XML no generado aún.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ========================================================
+  # RECURSO: /invoices/{id}/cdr (DESCARGAR CONSTANCIA DE RECEPCIÓN CDR)
+  # ========================================================
+  /invoices/{id}/cdr:
+    get:
+      tags:
+        - Invoices
+      summary: Descargar constancia de recepción CDR emitida por OSE / SUNAT
+      description: Retorna el archivo ZIP conteniendo la respuesta oficial firmada por la autoridad tributaria.
+      operationId: downloadInvoiceCdr
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Archivo ZIP con el CDR de SUNAT/OSE.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: CDR no disponible (factura aún no enviada o rechazada en transporte).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ========================================================
+  # RECURSO: /migration/batches (INICIAR LOTE DE MIGRACIÓN)
+  # ========================================================
+  /migration/batches:
+    post:
+      tags:
+        - Migration
+      summary: Iniciar procesamiento de lote de datos legados de almacén (CU-04)
+      description: |
+        Ingesta masiva de registros históricos con los 5 campos del sistema anterior
+        (fecha, ingreso, salida, producto, nro_documento). Mapea a movimientos de almacén
+        y registra bitácora detallada de auditoría sin crear facturas tributarias automáticas.
+      operationId: createMigrationBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMigrationBatchRequest'
+      responses:
+        '202':
+          description: Lote de migración aceptado y en proceso de ejecución.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationBatchResponse'
+        '400':
+          description: Formato de carga inválido o lista de registros vacía.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ========================================================
+  # RECURSO: /migration/batches/{batchId} (INSPECCIONAR ESTADO DE LOTE)
+  # ========================================================
+  /migration/batches/{batchId}:
+    get:
+      tags:
+        - Migration
+      summary: Inspeccionar estado y resultados de un lote de migración (CU-05)
+      description: Consulta el avance, contadores de filas procesadas, errores y estado de finalización del lote.
+      operationId: getMigrationBatchById
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Información y trazabilidad del lote consultado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationBatchResponse'
+        '404':
+          description: Lote de migración no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  # ========================================================
+  # RECURSO: /migration/traceability/{legacyDocumentNumber}
+  # ========================================================
+  /migration/traceability/{legacyDocumentNumber}:
+    get:
+      tags:
+        - Migration
+      summary: Rastrear destino de un documento interno legado
+      description: Permite a los auditores conocer a qué movimiento de almacén y registro histórico correspondió un número de ficha antiguo.
+      operationId: getTraceabilityByLegacyDocument
+      parameters:
+        - name: legacyDocumentNumber
+          in: path
+          required: true
+          description: Número de documento informal del sistema antiguo (ej. ING-2025-0089).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Historial de trazabilidad encontrado.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MigrationRecordDetailDTO'
+        '404':
+          description: No existen registros vinculados a dicho número de documento.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+# ========================================================
+# COMPONENTES Y ESQUEMAS REUTILIZABLES
+# ========================================================
+components:
+  schemas:
+    CurrencyCode:
+      type: string
+      description: Código de divisa según Catálogo 02 SUNAT e ISO 4217.
+      enum: [PEN, USD, EUR]
+      example: PEN
+
+    InvoiceTypeCode:
+      type: string
+      description: Código de comprobante según Catálogo 01 SUNAT.
+      enum: ["01", "03", "07", "08"]
+      example: "01"
+
+    IdentityDocumentTypeCode:
+      type: string
+      description: Tipo de documento de identidad según Catálogo 06 SUNAT.
+      enum: ["0", "1", "4", "6", "7", "A"]
+      example: "6"
+
+    TaxExemptionReasonCode:
+      type: string
+      description: Tipo de afectación al IGV según Catálogo 07 SUNAT.
+      enum:
+        - "10" # Gravado - Operación Onerosa
+        - "11" # Gravado - Retiro por premio
+        - "20" # Exonerado - Operación Onerosa
+        - "30" # Inafecto - Operación Onerosa
+        - "40" # Exportación
+      example: "10"
+
+    IscCalculationMethodCode:
+      type: string
+      description: Sistema de cálculo del ISC según Catálogo 08 SUNAT.
+      enum:
+        - "01" # Sistema al Valor
+        - "02" # Sistema Específico
+        - "03" # Sistema al Precio de Venta al Público
+      example: "01"
+
+    InvoiceStatus:
+      type: string
+      description: Estado operativo y fiscal del comprobante.
+      enum:
+        - DRAFT
+        - VALIDATED
+        - SIGNED_PENDING_SUBMISSION
+        - ISSUED_ACCEPTED
+        - REJECTED
+        - OBSERVATIONS_DETECTED
+        - VOIDED
+      example: ISSUED_ACCEPTED
+
+    CreateInvoiceRequest:
+      type: object
+      description: Contrato de entrada para registrar y validar una factura.
+      required:
+        - invoice_type_code
+        - series
+        - issue_date
+        - currency
+        - customer
+        - lines
+      properties:
+        invoice_type_code:
+          $ref: '#/components/schemas/InvoiceTypeCode'
+        series:
+          type: string
+          pattern: '^F[A-Z0-9]{3}$'
+          description: Serie de 4 caracteres alfanuméricos iniciando con F.
+          example: "F001"
+        issue_date:
+          type: string
+          format: date
+          example: "2026-10-22"
+        due_date:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-11-22"
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        notes:
+          type: string
+          maxLength: 500
+          nullable: true
+          example: "Condición de pago: Contado"
+        customer:
+          $ref: '#/components/schemas/CustomerDTO'
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CreateInvoiceLineDTO'
+
+    CustomerDTO:
+      type: object
+      description: Información del adquirente.
+      required:
+        - identity_document_type
+        - identity_document_number
+        - legal_name
+      properties:
+        identity_document_type:
+          $ref: '#/components/schemas/IdentityDocumentTypeCode'
+        identity_document_number:
+          type: string
+          pattern: '^[0-9]{11}$'
+          description: Para facturas ('01') debe ser RUC de 11 dígitos.
+          example: "20481234567"
+        legal_name:
+          type: string
+          minLength: 3
+          maxLength: 1500
+          example: "DISTRIBUIDORA SAN MARTIN S.A.C."
+        address:
+          type: string
+          maxLength: 250
+          nullable: true
+          example: "Jr. Progreso 124, Tingo María, Huánuco"
+        email:
+          type: string
+          format: email
+          nullable: true
+          example: "contacto@distribuidorasanmartin.pe"
+
+    CreateInvoiceLineDTO:
+      type: object
+      description: Línea individual de venta de bienes o mercadería.
+      required:
+        - description
+        - quantity
+        - unit_code
+        - unit_value
+        - tax_exemption_reason_code
+      properties:
+        sku:
+          type: string
+          maxLength: 30
+          example: "ARR-COST-50K"
+        description:
+          type: string
+          minLength: 2
+          maxLength: 500
+          example: "Saco de Arroz Costeño Extra 50 Kg"
+        quantity:
+          type: number
+          format: decimal
+          minimum: 0.0001
+          example: 10.0000
+        unit_code:
+          type: string
+          maxLength: 5
+          description: Unidad de medida según Catálogo 03 (ej. NIU, KGM, BX).
+          example: "BX"
+        unit_value:
+          type: number
+          format: decimal
+          minimum: 0.000001
+          description: Precio unitario sin impuestos.
+          example: 150.0000
+        tax_exemption_reason_code:
+          $ref: '#/components/schemas/TaxExemptionReasonCode'
+        igv_rate:
+          type: number
+          format: decimal
+          default: 18.00
+          example: 18.00
+        is_subject_to_isc:
+          type: boolean
+          default: false
+          example: false
+        isc_calculation_method:
+          $ref: '#/components/schemas/IscCalculationMethodCode'
+        isc_rate:
+          type: number
+          format: decimal
+          default: 0.00
+          example: 0.00
+        plastic_bag_quantity:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Para liquidación de ICBPER si aplica.
+          example: 0
+
+    InvoiceResponse:
+      type: object
+      description: Respuesta detallada del comprobante registrado.
+      required:
+        - id
+        - series
+        - number
+        - invoice_type_code
+        - issue_date
+        - currency
+        - status
+        - total_amount
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "c79c3b8a-16e7-4b76-a675-92d6e3c0b11a"
+        series:
+          type: string
+          example: "F001"
+        number:
+          type: integer
+          example: 1042
+        invoice_type_code:
+          $ref: '#/components/schemas/InvoiceTypeCode'
+        issue_date:
+          type: string
+          format: date
+          example: "2026-10-22"
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        customer:
+          $ref: '#/components/schemas/CustomerDTO'
+        monetary_totals:
+          $ref: '#/components/schemas/MonetaryTotalsDTO'
+        tax_evidence:
+          $ref: '#/components/schemas/TaxEvidenceDTO'
+
+    MonetaryTotalsDTO:
+      type: object
+      description: Desglose aritmético de montos monetarios de la factura.
+      required:
+        - taxable_amount
+        - exempted_amount
+        - inafect_amount
+        - total_discounts
+        - total_igv
+        - total_isc
+        - total_icbper
+        - total_amount
+      properties:
+        taxable_amount:
+          type: number
+          format: decimal
+          example: 1500.00
+        exempted_amount:
+          type: number
+          format: decimal
+          example: 0.00
+        inafect_amount:
+          type: number
+          format: decimal
+          example: 0.00
+        total_discounts:
+          type: number
+          format: decimal
+          example: 0.00
+        total_igv:
+          type: number
+          format: decimal
+          example: 270.00
+        total_isc:
+          type: number
+          format: decimal
+          example: 0.00
+        total_icbper:
+          type: number
+          format: decimal
+          example: 0.00
+        total_amount:
+          type: number
+          format: decimal
+          example: 1770.00
+
+    TaxEvidenceDTO:
+      type: object
+      description: Metadatos tributarios y de firma digital generados.
+      properties:
+        digest_value:
+          type: string
+          description: Valor del digest SHA-256 extraído de ds:DigestValue.
+          example: "iY8U2mJ4v28Fkl4qYd9Rz3bL7qw="
+        signature_value:
+          type: string
+          description: Resumen de ds:SignatureValue.
+          example: "MIIEowIBAAKCAQEA..."
+        cdr_ticket:
+          type: string
+          nullable: true
+          example: "202610221045239912"
+        cdr_response_code:
+          type: string
+          nullable: true
+          description: Código retornado en CDR (0 = Aceptado, >0 Rechazo u Obs).
+          example: "0"
+        cdr_description:
+          type: string
+          nullable: true
+          example: "La Factura número F001-00001042 ha sido aceptada"
+        xml_download_url:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://api.example.com/v1/invoices/c79c3b8a-16e7-4b76-a675-92d6e3c0b11a/xml"
+        cdr_download_url:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://api.example.com/v1/invoices/c79c3b8a-16e7-4b76-a675-92d6e3c0b11a/cdr"
+
+    IssueInvoiceRequest:
+      type: object
+      description: Parámetros para solicitar la emisión formal a OSE/SUNAT.
+      properties:
+        force_xml_rebuild:
+          type: boolean
+          default: false
+        contingency_mode:
+          type: boolean
+          default: false
+
+    LegacyRecordDTO:
+      type: object
+      description: Representa el registro histórico plano de almacén.
+      required:
+        - fecha
+        - ingreso
+        - salida
+        - producto
+        - nro_documento
+      properties:
+        fecha:
+          type: string
+          description: Cadena histórica con fecha en cualquier formato legado.
+          example: "15/03/2025"
+        ingreso:
+          type: string
+          description: Cantidad registrada como entrada física en almacén.
+          example: "50"
+        salida:
+          type: string
+          description: Cantidad registrada como salida física de almacén.
+          example: "0"
+        producto:
+          type: string
+          description: Denominación informal o código de mercadería.
+          example: "Aceite Primor 1L"
+        nro_documento:
+          type: string
+          description: Identificador o número interno de control informal.
+          example: "ING-2025-0089"
+
+    CreateMigrationBatchRequest:
+      type: object
+      description: Solicitud de ingesta masiva de registros históricos de almacén.
+      required:
+        - source_system
+        - records
+      properties:
+        source_system:
+          type: string
+          description: Nombre del archivo legado, base de datos antigua o módulo origen.
+          example: "backup_almacen_fichas_2025.csv"
+        batch_description:
+          type: string
+          maxLength: 250
+          example: "Carga de histórico de movimientos de mercadería 2024-2025"
+        records:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LegacyRecordDTO'
+
+    MigrationBatchResponse:
+      type: object
+      description: Resumen del procesamiento del lote de migración.
+      required:
+        - batch_id
+        - status
+        - total_records
+        - successful_records
+        - failed_records
+        - started_at
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          type: string
+          enum: [IN_PROGRESS, COMPLETED, FAILED]
+          example: COMPLETED
+        total_records:
+          type: integer
+          example: 100
+        successful_records:
+          type: integer
+          example: 98
+        failed_records:
+          type: integer
+          example: 2
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/MigrationRecordDetailDTO'
+
+    MigrationRecordDetailDTO:
+      type: object
+      description: Trazabilidad individual por fila procesada del sistema legado.
+      required:
+        - row_number
+        - row_status
+        - original_document_number
+      properties:
+        row_number:
+          type: integer
+          example: 1
+        row_status:
+          type: string
+          enum: [SUCCESS, WARNING, ERROR]
+          example: SUCCESS
+        original_document_number:
+          type: string
+          example: "ING-2025-0089"
+        validation_message:
+          type: string
+          nullable: true
+          example: "Migrado correctamente a InventoryMovement con tipo INBOUND."
+        created_entity_id:
+          type: string
+          format: uuid
+          nullable: true
+          example: "9a2f1c83-7b44-48f8-b3f0-4fa829b531dc"
+        created_entity_type:
+          type: string
+          nullable: true
+          example: "InventoryMovement"
+
+    ErrorDetailDTO:
+      type: object
+      required:
+        - field
+        - code
+        - message
+      properties:
+        field:
+          type: string
+          example: "customer.identity_document_number"
+        code:
+          type: string
+          example: "INVALID_RUC_LENGTH"
+        message:
+          type: string
+          example: "El RUC para comprobantes tipo Factura debe tener exactamente 11 dígitos numéricos."
+
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - detail
+      properties:
+        type:
+          type: string
+          format: uri
+          example: "https://api.example.com/errors/tax-validation"
+        title:
+          type: string
+          example: "Error de Validación de Reglas de Negocio"
+        status:
+          type: integer
+          example: 422
+        detail:
+          type: string
+          example: "La estructura de la factura o sus datos tributarios contienen inconsistencias normativas."
+        internal_code:
+          type: string
+          example: "ERR_TRIB_422"
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetailDTO'

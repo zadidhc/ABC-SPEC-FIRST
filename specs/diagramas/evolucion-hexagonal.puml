@@ -1,0 +1,102 @@
+@startuml
+!theme plain
+skinparam componentStyle uml2
+skinparam packageStyle rectangle
+skinparam handwritten false
+
+title ABC Software Corp — Evolution to Hexagonal Architecture (Ports & Adapters)
+
+package "Primary Driving Adapters (Inbound)" as InboundAdapters {
+    component [Windows Desktop UI (WPF / WinUI)] as WindowsUI
+    component [Android Mobile App (Jetpack Compose)] as AndroidUI
+    component [REST API Controller (OpenAPI 3.1)] as RestApi
+    component [CLI / Batch File Importer] as CliBatch
+}
+
+package "Application Core (Inner Hexagon)" as CoreHexagon {
+    package "Inbound Ports (Use Case Interfaces)" as InboundPorts {
+        interface IRegisterInvoiceUseCase {
+            +execute(command: RegisterInvoiceCommand): InvoiceResult
+        }
+        interface IIssueInvoiceSunatUseCase {
+            +execute(command: IssueInvoiceCommand): IssuanceResult
+        }
+        interface IGetInvoiceUseCase {
+            +getById(id: UUID): InvoiceResponse
+        }
+        interface IMigrateLegacyBatchUseCase {
+            +execute(command: MigrateBatchCommand): BatchResult
+        }
+    }
+
+    package "Application Services" as ApplicationServices {
+        class InvoicingApplicationService implements IRegisterInvoiceUseCase, IIssueInvoiceSunatUseCase, IGetInvoiceUseCase
+        class MigrationApplicationService implements IMigrateLegacyBatchUseCase
+    }
+
+    package "Domain Model (Entities, Aggregates & Invariants)" as PureDomain {
+        entity Invoice
+        entity InvoiceLine
+        entity InventoryMovement
+        entity MigrationBatch
+        entity Product
+        class Ruc <<ValueObject>>
+        class TaxSummary <<ValueObject>>
+    }
+
+    package "Outbound Ports (Driven Interfaces / SPI)" as OutboundPorts {
+        interface IInvoiceRepositoryPort {
+            +save(invoice: Invoice): void
+            +findById(id: UUID): Invoice
+        }
+        interface IInventoryMovementRepositoryPort {
+            +save(movement: InventoryMovement): void
+        }
+        interface IMigrationBatchRepositoryPort {
+            +save(batch: MigrationBatch): void
+        }
+        interface IUblGeneratorPort {
+            +generateInvoiceXml(invoice: Invoice): String
+        }
+        interface IDigitalSignaturePort {
+            +signDocument(xml: String): SignatureResult
+        }
+        interface ISunatOsePort {
+            +sendBill(zipContent: byte[], fileName: String): CdrResult
+        }
+        interface IDocumentStoragePort {
+            +storeDocument(key: String, payload: byte[]): String
+            +retrieveDocument(key: String): byte[]
+        }
+    }
+}
+
+package "Secondary Driven Adapters (Outbound)" as OutboundAdapters {
+    component [PostgreSQL / SQLite Database Adapter] as DbAdapter
+    component [OASIS UBL 2.1 XML Generator Adapter] as UblAdapter
+    component [XAdES-BES PKCS#12 Signer Adapter] as SignerAdapter
+    component [SOAP OSE/SUNAT Client Adapter] as SunatSoapAdapter
+    component [Local Encrypted FS / S3 Storage Adapter] as StorageAdapter
+}
+
+' Inbound connections
+WindowsUI --> InboundPorts
+AndroidUI --> InboundPorts
+RestApi --> InboundPorts
+CliBatch --> InboundPorts
+
+InboundPorts ..> ApplicationServices : invokes
+ApplicationServices --> PureDomain : orchestrates
+ApplicationServices --> OutboundPorts : uses
+
+' Outbound implementations (Dependency Inversion)
+DbAdapter .up.|> IInvoiceRepositoryPort
+DbAdapter .up.|> IInventoryMovementRepositoryPort
+DbAdapter .up.|> IMigrationBatchRepositoryPort
+
+UblAdapter .up.|> IUblGeneratorPort
+SignerAdapter .up.|> IDigitalSignaturePort
+SunatSoapAdapter .up.|> ISunatOsePort
+StorageAdapter .up.|> IDocumentStoragePort
+
+@enduml

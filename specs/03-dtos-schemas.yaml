@@ -1,0 +1,513 @@
+# SPEC 01 (Contratos de Datos) — DTOs y Esquemas Reutilizables
+# ABC Software Corp — Sistema de Facturación Electrónica y Migración
+# Versión: 1.0.0 (OpenAPI 3.1.0 compatible schemas)
+
+components:
+  schemas:
+    # ==========================================
+    # ESQUEMAS COMUNES Y TIPOS BASE (COMMON TYPES)
+    # ==========================================
+    CurrencyCode:
+      type: string
+      description: Código de divisa según Catálogo 02 SUNAT e ISO 4217.
+      enum: [PEN, USD, EUR]
+      example: PEN
+
+    InvoiceTypeCode:
+      type: string
+      description: Código de comprobante según Catálogo 01 SUNAT.
+      enum: ["01", "03", "07", "08"]
+      example: "01"
+
+    IdentityDocumentTypeCode:
+      type: string
+      description: Tipo de documento de identidad según Catálogo 06 SUNAT.
+      enum: ["0", "1", "4", "6", "7", "A"]
+      example: "6"
+
+    TaxExemptionReasonCode:
+      type: string
+      description: Tipo de afectación al IGV según Catálogo 07 SUNAT.
+      enum:
+        - "10" # Gravado - Operación Onerosa
+        - "11" # Gravado - Retiro por premio
+        - "20" # Exonerado - Operación Onerosa
+        - "30" # Inafecto - Operación Onerosa
+        - "40" # Exportación
+      example: "10"
+
+    IscCalculationMethodCode:
+      type: string
+      description: Sistema de cálculo del ISC según Catálogo 08 SUNAT.
+      enum:
+        - "01" # Sistema al Valor
+        - "02" # Sistema Específico
+        - "03" # Sistema al Precio de Venta al Público
+      example: "01"
+
+    InvoiceStatus:
+      type: string
+      description: Estado operativo y fiscal del comprobante.
+      enum:
+        - DRAFT
+        - VALIDATED
+        - SIGNED_PENDING_SUBMISSION
+        - ISSUED_ACCEPTED
+        - REJECTED
+        - OBSERVATIONS_DETECTED
+        - VOIDED
+      example: ISSUED_ACCEPTED
+
+    # ==========================================
+    # DTOS DE FACTURACIÓN (ENTRADA / SALIDA)
+    # ==========================================
+    CreateInvoiceRequest:
+      type: object
+      description: Contrato de entrada para registrar y validar una factura.
+      required:
+        - invoice_type_code
+        - series
+        - issue_date
+        - currency
+        - customer
+        - lines
+      properties:
+        invoice_type_code:
+          $ref: '#/components/schemas/InvoiceTypeCode'
+        series:
+          type: string
+          pattern: '^F[A-Z0-9]{3}$'
+          description: Serie de 4 caracteres alfanuméricos iniciando con F.
+          example: "F001"
+        issue_date:
+          type: string
+          format: date
+          example: "2026-10-22"
+        due_date:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-11-22"
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        notes:
+          type: string
+          maxLength: 500
+          nullable: true
+          example: "Condición de pago: Crédito 30 días"
+        customer:
+          $ref: '#/components/schemas/CustomerDTO'
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CreateInvoiceLineDTO'
+
+    CustomerDTO:
+      type: object
+      description: Información del adquirente.
+      required:
+        - identity_document_type
+        - identity_document_number
+        - legal_name
+      properties:
+        identity_document_type:
+          $ref: '#/components/schemas/IdentityDocumentTypeCode'
+        identity_document_number:
+          type: string
+          pattern: '^[0-9]{11}$'
+          description: Para facturas ('01') debe ser RUC de 11 dígitos.
+          example: "20481234567"
+        legal_name:
+          type: string
+          minLength: 3
+          maxLength: 1500
+          example: "DISTRIBUIDORA SAN MARTIN S.A.C."
+        address:
+          type: string
+          maxLength: 250
+          nullable: true
+          example: "Jr. Progreso 124, Tingo María, Huánuco"
+        email:
+          type: string
+          format: email
+          nullable: true
+          example: "contacto@distribuidorasanmartin.pe"
+
+    CreateInvoiceLineDTO:
+      type: object
+      description: Línea individual de venta de bienes o mercadería.
+      required:
+        - description
+        - quantity
+        - unit_code
+        - unit_value
+        - tax_exemption_reason_code
+      properties:
+        sku:
+          type: string
+          maxLength: 30
+          example: "ARR-COST-50K"
+        description:
+          type: string
+          minLength: 2
+          maxLength: 500
+          example: "Saco de Arroz Costeño Extra 50 Kg"
+        quantity:
+          type: number
+          format: decimal
+          minimum: 0.0001
+          example: 10.0000
+        unit_code:
+          type: string
+          maxLength: 5
+          description: Unidad de medida según Catálogo 03 (ej. NIU, KGM, BX).
+          example: "BX"
+        unit_value:
+          type: number
+          format: decimal
+          minimum: 0.000001
+          description: Precio unitario sin impuestos (valor unitario).
+          example: 150.0000
+        tax_exemption_reason_code:
+          $ref: '#/components/schemas/TaxExemptionReasonCode'
+        igv_rate:
+          type: number
+          format: decimal
+          default: 18.00
+          example: 18.00
+        is_subject_to_isc:
+          type: boolean
+          default: false
+          example: false
+        isc_calculation_method:
+          $ref: '#/components/schemas/IscCalculationMethodCode'
+        isc_rate:
+          type: number
+          format: decimal
+          default: 0.00
+          example: 0.00
+        plastic_bag_quantity:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Cantidad de bolsas de plástico para liquidación de ICBPER.
+          example: 0
+
+    InvoiceResponse:
+      type: object
+      description: Respuesta detallada del comprobante registrado.
+      required:
+        - id
+        - series
+        - number
+        - invoice_type_code
+        - issue_date
+        - currency
+        - status
+        - total_amount
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "c79c3b8a-16e7-4b76-a675-92d6e3c0b11a"
+        series:
+          type: string
+          example: "F001"
+        number:
+          type: integer
+          example: 1042
+        invoice_type_code:
+          $ref: '#/components/schemas/InvoiceTypeCode'
+        issue_date:
+          type: string
+          format: date
+          example: "2026-10-22"
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        customer:
+          $ref: '#/components/schemas/CustomerDTO'
+        monetary_totals:
+          $ref: '#/components/schemas/MonetaryTotalsDTO'
+        tax_evidence:
+          $ref: '#/components/schemas/TaxEvidenceDTO'
+        audit_trail:
+          type: object
+          properties:
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+    MonetaryTotalsDTO:
+      type: object
+      description: Desglose aritmético de montos monetarios de la factura.
+      required:
+        - taxable_amount
+        - exempted_amount
+        - inafect_amount
+        - total_discounts
+        - total_igv
+        - total_isc
+        - total_icbper
+        - total_amount
+      properties:
+        taxable_amount:
+          type: number
+          format: decimal
+          example: 1500.00
+        exempted_amount:
+          type: number
+          format: decimal
+          example: 0.00
+        inafect_amount:
+          type: number
+          format: decimal
+          example: 0.00
+        total_discounts:
+          type: number
+          format: decimal
+          example: 0.00
+        total_igv:
+          type: number
+          format: decimal
+          example: 270.00
+        total_isc:
+          type: number
+          format: decimal
+          example: 0.00
+        total_icbper:
+          type: number
+          format: decimal
+          example: 0.00
+        total_amount:
+          type: number
+          format: decimal
+          example: 1770.00
+
+    TaxEvidenceDTO:
+      type: object
+      description: Metadatos tributarios, hash y firma digital generados.
+      properties:
+        digest_value:
+          type: string
+          description: Valor del digest SHA-256 extraído de ds:DigestValue.
+          example: "iY8U2mJ4v28Fkl4qYd9Rz3bL7qw="
+        signature_value:
+          type: string
+          description: Resumen criptográfico de ds:SignatureValue.
+          example: "MIIEowIBAAKCAQEA..."
+        cdr_ticket:
+          type: string
+          nullable: true
+          example: "202610221045239912"
+        cdr_response_code:
+          type: string
+          nullable: true
+          description: Código retornado en CDR (0 = Aceptado, >0 Rechazo u Obs).
+          example: "0"
+        cdr_description:
+          type: string
+          nullable: true
+          example: "La Factura número F001-00001042 ha sido aceptada"
+        xml_download_url:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://api.example.com/v1/invoices/c79c3b8a-16e7-4b76-a675-92d6e3c0b11a/xml"
+        cdr_download_url:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://api.example.com/v1/invoices/c79c3b8a-16e7-4b76-a675-92d6e3c0b11a/cdr"
+
+    IssueInvoiceRequest:
+      type: object
+      description: Parámetros para solicitar la emisión formal a OSE/SUNAT.
+      properties:
+        force_xml_rebuild:
+          type: boolean
+          default: false
+        contingency_mode:
+          type: boolean
+          default: false
+
+    # ==========================================
+    # DTOS DE MIGRACIÓN DE DATOS LEGADOS
+    # ==========================================
+    LegacyRecordDTO:
+      type: object
+      description: Representa el registro histórico plano del almacén legado.
+      required:
+        - fecha
+        - ingreso
+        - salida
+        - producto
+        - nro_documento
+      properties:
+        fecha:
+          type: string
+          description: Cadena histórica con fecha en formato de ficha antigua.
+          example: "15/03/2025"
+        ingreso:
+          type: string
+          description: Cantidad registrada como entrada física en almacén.
+          example: "50"
+        salida:
+          type: string
+          description: Cantidad registrada como salida física de almacén.
+          example: "0"
+        producto:
+          type: string
+          description: Denominación informal o código de mercadería.
+          example: "Aceite Primor 1L"
+        nro_documento:
+          type: string
+          description: Identificador o número interno de control informal.
+          example: "ING-2025-0089"
+
+    CreateMigrationBatchRequest:
+      type: object
+      description: Solicitud de ingesta masiva de registros históricos de almacén.
+      required:
+        - source_system
+        - records
+      properties:
+        source_system:
+          type: string
+          description: Identificador del archivo o sistema fuente legado.
+          example: "backup_almacen_fichas_2025.csv"
+        batch_description:
+          type: string
+          maxLength: 250
+          example: "Carga de histórico de movimientos de mercadería 2024-2025"
+        records:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LegacyRecordDTO'
+
+    MigrationBatchResponse:
+      type: object
+      description: Resumen del procesamiento del lote de migración.
+      required:
+        - batch_id
+        - status
+        - total_records
+        - successful_records
+        - failed_records
+        - started_at
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          type: string
+          enum: [IN_PROGRESS, COMPLETED, FAILED]
+          example: COMPLETED
+        total_records:
+          type: integer
+          example: 100
+        successful_records:
+          type: integer
+          example: 98
+        failed_records:
+          type: integer
+          example: 2
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/MigrationRecordDetailDTO'
+
+    MigrationRecordDetailDTO:
+      type: object
+      description: Trazabilidad individual por fila procesada del sistema legado.
+      required:
+        - row_number
+        - row_status
+        - original_document_number
+      properties:
+        row_number:
+          type: integer
+          example: 1
+        row_status:
+          type: string
+          enum: [SUCCESS, WARNING, ERROR]
+          example: SUCCESS
+        original_document_number:
+          type: string
+          example: "ING-2025-0089"
+        validation_message:
+          type: string
+          nullable: true
+          example: "Migrado correctamente a InventoryMovement con tipo INBOUND."
+        created_entity_id:
+          type: string
+          format: uuid
+          nullable: true
+          example: "9a2f1c83-7b44-48f8-b3f0-4fa829b531dc"
+        created_entity_type:
+          type: string
+          nullable: true
+          example: "InventoryMovement"
+
+    # ==========================================
+    # ESQUEMAS DE ERROR ESTANDARIZADOS (RFC 7807)
+    # ==========================================
+    ErrorDetailDTO:
+      type: object
+      required:
+        - field
+        - code
+        - message
+      properties:
+        field:
+          type: string
+          example: "customer.identity_document_number"
+        code:
+          type: string
+          example: "INVALID_RUC_LENGTH"
+        message:
+          type: string
+          example: "El RUC para comprobantes tipo Factura debe tener exactamente 11 dígitos numéricos."
+
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - detail
+      properties:
+        type:
+          type: string
+          format: uri
+          example: "https://api.example.com/errors/tax-validation"
+        title:
+          type: string
+          example: "Error de Validación de Reglas de Negocio"
+        status:
+          type: integer
+          example: 422
+        detail:
+          type: string
+          example: "La estructura de la factura o sus datos tributarios contienen inconsistencias normativas."
+        internal_code:
+          type: string
+          example: "ERR_TRIB_422"
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetailDTO'

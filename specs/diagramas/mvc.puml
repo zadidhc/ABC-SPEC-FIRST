@@ -1,0 +1,153 @@
+@startuml
+!theme plain
+skinparam componentStyle uml2
+skinparam packageStyle rectangle
+skinparam handwritten false
+skinparam classAttributeIconSize 0
+
+title ABC Software Corp — Modular Monolith Architecture (MVC Pattern)
+
+package "Presentation Layer (Controllers)" as PresentationLayer {
+    class InvoiceController {
+        +createInvoice(req: CreateInvoiceRequest): Response
+        +issueInvoice(id: UUID, req: IssueInvoiceRequest): Response
+        +getInvoiceById(id: UUID): Response
+        +downloadInvoiceXml(id: UUID): FileStream
+        +downloadInvoiceCdr(id: UUID): FileStream
+    }
+
+    class MigrationController {
+        +createMigrationBatch(req: CreateMigrationBatchRequest): Response
+        +getMigrationBatchById(batchId: UUID): Response
+        +getTraceabilityByLegacyDocument(legacyDocNumber: String): Response
+    }
+
+    class InventoryController {
+        +getInventoryMovements(filter: FilterDTO): Response
+        +getStockLevels(): Response
+    }
+}
+
+package "Application Services Layer" as ApplicationLayer {
+    class InvoicingService {
+        -invoiceRepository: IInvoiceRepository
+        -ublBuilder: IUblBuilderService
+        -signatureService: IDigitalSignatureService
+        -sunatOseClient: ISunatOseClient
+        -inventoryService: InventoryService
+        +registerAndValidate(dto: CreateInvoiceRequest): Invoice
+        +issueInvoice(invoiceId: UUID): IssuanceResult
+        +getInvoiceById(invoiceId: UUID): Invoice
+    }
+
+    class MigrationService {
+        -migrationBatchRepository: IMigrationBatchRepository
+        -inventoryService: InventoryService
+        -productRepository: IProductRepository
+        +processBatch(dto: CreateMigrationBatchRequest): MigrationBatch
+        +getBatchStatus(batchId: UUID): MigrationBatch
+    }
+
+    class InventoryService {
+        -inventoryMovementRepository: IInventoryMovementRepository
+        +registerMovement(mov: InventoryMovement): void
+        +getKardexRecords(): List<InventoryMovement>
+    }
+}
+
+package "Domain Layer (Entities & Invariants)" as DomainLayer {
+    class Invoice {
+        +series: String
+        +number: Integer
+        +status: InvoiceStatus
+        +calculateTotals(): void
+        +validateTaxInvariants(): void
+    }
+    class InvoiceLine {
+        +calculateSubtotal(): void
+        +calculateTaxes(): void
+    }
+    class InventoryMovement {
+        +type: MovementType
+        +quantity: Decimal
+        +referenceDocNumber: String
+    }
+    class MigrationBatch {
+        +processRow(rawJson: String): MigrationRecord
+    }
+    class MigrationRecord {
+        +rowStatus: RowStatus
+    }
+}
+
+package "Decoupling Interfaces (Business Ports / SPI)" as InterfaceLayer {
+    interface IInvoiceRepository {
+        +save(invoice: Invoice): Invoice
+        +findById(id: UUID): Invoice
+        +getNextSequenceNumber(series: String): Integer
+    }
+
+    interface IInventoryMovementRepository {
+        +save(movement: InventoryMovement): InventoryMovement
+        +findByReference(type: String, docNumber: String): List<InventoryMovement>
+    }
+
+    interface IMigrationBatchRepository {
+        +save(batch: MigrationBatch): MigrationBatch
+        +findById(id: UUID): MigrationBatch
+    }
+
+    interface IUblBuilderService {
+        +buildInvoiceXml(invoice: Invoice): String
+    }
+
+    interface IDigitalSignatureService {
+        +signXml(xmlContent: String, certKeyId: String): String
+        +extractDigest(signedXml: String): String
+    }
+
+    interface ISunatOseClient {
+        +sendBill(zipContent: byte[], fileName: String): CdrResponse
+        +getStatus(ticket: String): CdrResponse
+    }
+
+    interface IDocumentStorageService {
+        +storeDocument(path: String, content: byte[]): String
+        +retrieveDocument(path: String): byte[]
+    }
+}
+
+package "Infrastructure Layer (Persistence & Adapters)" as InfrastructureLayer {
+    class SqlInvoiceRepository implements IInvoiceRepository
+    class SqlInventoryMovementRepository implements IInventoryMovementRepository
+    class SqlMigrationBatchRepository implements IMigrationBatchRepository
+    class OasisUbl21Builder implements IUblBuilderService
+    class XadesBesSigner implements IDigitalSignatureService
+    class SoapSunatOseClient implements ISunatOseClient
+    class LocalFileSystemStorage implements IDocumentStorageService
+}
+
+' Layer relationships
+InvoiceController --> InvoicingService
+MigrationController --> MigrationService
+InventoryController --> InventoryService
+
+InvoicingService --> IInvoiceRepository
+InvoicingService --> IUblBuilderService
+InvoicingService --> IDigitalSignatureService
+InvoicingService --> ISunatOseClient
+InvoicingService --> IDocumentStorageService
+InvoicingService --> InventoryService
+InvoicingService --> Invoice
+
+MigrationService --> IMigrationBatchRepository
+MigrationService --> InventoryService
+MigrationService --> MigrationBatch
+
+InventoryService --> IInventoryMovementRepository
+InventoryService --> InventoryMovement
+
+Invoice *-- InvoiceLine
+MigrationBatch *-- MigrationRecord
+
+@enduml
