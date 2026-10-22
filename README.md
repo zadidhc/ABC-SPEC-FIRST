@@ -32,6 +32,7 @@ Siguiendo la metodología **Spec-First**, este repositorio contiene la arquitect
 │   ├── 04-arquitectura.md              # Monolito MVC y evolución hacia hexagonal
 │   ├── 05-endpoints-openapi.yaml       # Contrato de API formal OpenAPI 3.1.0 validado
 │   ├── 06-matriz-sunat-ubl.md          # Matriz de trazabilidad SUNAT – OASIS UBL 2.1
+│   ├── Matriz_Trazabilidad_SUNAT_UBL_ABC.xlsx # Matriz de trazabilidad en formato tabular Excel
 │   └── diagramas/                      # Fuentes de diagramas PlantUML
 │       ├── mvc.puml                    # Diagrama de clases MVC monolítico
 │       └── evolucion-hexagonal.puml     # Diagrama de arquitectura hexagonal (Ports & Adapters)
