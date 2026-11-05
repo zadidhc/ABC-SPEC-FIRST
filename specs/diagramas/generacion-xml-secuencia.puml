@@ -1,0 +1,72 @@
+@startuml
+!theme plain
+autonumber
+skinparam handwritten false
+skinparam sequenceMessageAlign center
+
+title Secuencia de Generación, Validación XSD y Emisión de Comprobantes UBL 2.1
+
+actor "Cliente / Operador" as Client
+participant "InvoiceController" as Controller
+participant "GenerarXmlComprobanteService" as Service
+participant "ValidadorNegocio (VAL-*)" as Validator
+participant "MotorCalculoTributario" as TaxEngine
+participant "IUblGeneratorPort\n(UblXsdGeneratorAdapter)" as UblAdapter
+participant "IXmlValidatorPort\n(ValidadorXsdLxml)" as XsdValidator
+participant "IDigitalSignaturePort\n(XmlDsigSigner)" as Signer
+participant "IDocumentStorageService" as Storage
+
+Client -> Controller: POST /invoices/{id}/issue (X-Idempotency-Key)
+activate Controller
+
+Controller -> Service: emitirComprobante(id)
+activate Service
+
+Service -> Validator: validarReglasNegocio(comprobante)
+activate Validator
+note right: Verifica RUC (Módulo 11), serie ^F...,\ncorrelativo, coherencia adquirente
+Validator --> Service: Reglas válidas (Conforme)
+deactivate Validator
+
+Service -> TaxEngine: calcularImpuestos(lineas)
+activate TaxEngine
+note right: Decimal exacto:\nvalor_venta, base_isc, total_isc,\nbase_igv, total_igv (18%), total pagar
+TaxEngine --> Service: Totales calculados (CalculoComprobante)
+deactivate TaxEngine
+
+Service -> UblAdapter: generarXml(comprobante, calculo)
+activate UblAdapter
+note right of UblAdapter
+  Instancia clases generadas de XSD
+  (ubl_generado.Invoice, cac:*, cbc:*)
+  y serializa mediante XmlSerializer.
+  Sin plantillas de texto.
+end note
+UblAdapter --> Service: xml_bytes
+deactivate UblAdapter
+
+Service -> XsdValidator: validar(xml_bytes, "UBL-Invoice-2.1.xsd")
+activate XsdValidator
+note right: Valida contra esquemas XSD oficiales OASIS.\nLanza XmlInvalidoError si no conforma.
+XsdValidator --> Service: Validado OK
+deactivate XsdValidator
+
+Service -> Signer: firmarXml(xml_bytes, certKeyId)
+activate Signer
+note right: Aplica XMLDSig Enveloped\nen ext:UBLExtensions.\nExtrae ds:DigestValue
+Signer --> Service: xml_firmado_bytes, hash_sha256
+deactivate Signer
+
+Service -> Storage: guardarDocumento(ruta, xml_firmado_bytes)
+activate Storage
+Storage --> Service: uri_almacenamiento
+deactivate Storage
+
+Service --> Controller: ResultadoEmision (ID, Digest, Estado SIGNED)
+deactivate Service
+
+Controller --> Client: HTTP 200 OK (InvoiceResponse con Digest y URL XML)
+deactivate Controller
+
+@enduml
+

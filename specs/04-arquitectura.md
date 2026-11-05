@@ -1,10 +1,10 @@
 # SPEC 02 — Arquitectura de Software: Monolito MVC y Evolución Hexagonal
 
-**Versión:** 1.0.0  
-**Fecha:** 22 de octubre de 2026  
-**Fase:** Fase 1 — Especificación Técnica Spec-First  
+**Versión:** 2.0.0  
+**Fecha:** 5 de noviembre de 2026  
+**Fase:** Fase 2 — Corrección y Ampliación Spec-First  
 **Autor:** Senior Software Architect  
-**Estado:** BORRADOR — PENDIENTE DE REVISIÓN
+**Estado:** REVISADO — APROBADO PARA FASE 2
 
 ---
 
@@ -16,33 +16,64 @@ Para satisfacer los requerimientos operativos inmediatos de **ABC Software Corp*
 
 ---
 
-## 2. Fase Inicial: Monolito Modular MVC
+## 2. Registro de Decisiones de Arquitectura (ADR)
 
-### 2.1 Justificación
-Un monolito modular evita la sobreingeniería y complejidad distribuida (fallas de red, consistencia eventual, orquestación de transacciones) en un equipo mediano en fase de regularización tributaria. La clave del diseño radica en **prohibir dependencias directas de la capa de presentación hacia infraestructura o persistencia**.
+### ADR-001: Estrategia de Generación y Validación de Documentos XML UBL 2.1
+- **Estado:** Aprobado.
+- **Contexto:** La SUNAT exige comprobantes electrónicos estrictamente apegados al estándar OASIS UBL 2.1 y esquemas XSD normativos. Errores sintácticos o de orden en etiquetas conllevan rechazo tributario inmediato (códigos CDR 2000–3999).
+- **Decisión:**  
+  1. El XML se produce exclusivamente a partir de **clases fuertemente tipadas generadas directamente de los esquemas normativos oficiales OASIS UBL 2.1 XSD** (`UBL-Invoice-2.1.xsd`, `UBL-CreditNote-2.1.xsd`, `UBL-DebitNote-2.1.xsd` y dependencias de `common/`).  
+  2. En ecosistemas Java se utiliza `JAXB/xjc`; en ecosistemas Python se utiliza `xsdata`.  
+  3. La serialización a XML se ejecuta mediante un marshaller/serializador estándar configurado con codificación UTF-8, declaración XML y mapa explícito de namespaces UBL (`cac`, `cbc`, `ext`, default).  
+  4. Todo XML generado **debe ser validado programáticamente contra el esquema XSD correspondiente antes de someterlo al proceso de firma digital**.  
+  5. **Se prohíbe taxativamente el uso de motores de plantillas de texto (Jinja, FreeMarker, Mustache, Thymeleaf), interpolación de variables o concatenación de cadenas** para producir XML tributario.
+- **Consecuencias:**  
+  - *Positivas:* Garantía de corrección gramatical según XSD, prevención de vulnerabilidades de inyección XML, validación de tipos y cardinalidades en tiempo de compilación/ejecución.  
+  - *Mitigaciones:* La generación inicial de clases a partir de XSD se encapsula en scripts reproducibles (`generar_clases.sh`), sin editar manualmente el código generado.
 
-### 2.2 Descomposición en Capas y Responsabilidades
-- **Capa de Controladores (Presentation Layer):** Recibe las solicitudes HTTP/REST o eventos de UI local (`InvoiceController`, `MigrationController`, `InventoryController`), valida sintácticamente los DTOs de entrada (`CreateInvoiceRequest`, `CreateMigrationBatchRequest`), delega la ejecución al servicio de aplicación y retorna DTOs (`InvoiceResponse`, `MigrationBatchResponse`) o códigos HTTP adecuados.
-- **Capa de Servicios de Aplicación (Application Services):** Orquesta los casos de uso (`InvoicingService`, `MigrationService`, `InventoryService`), coordina transacciones de base de datos y utiliza interfaces desacopladas.
-- **Capa de Dominio (Domain Layer):** Entidades puras (`Invoice`, `InvoiceLine`, `InventoryMovement`, `MigrationBatch`) que contienen las invariantes de negocio, cálculos aritméticos de impuestos (IGV, ISC, ICBPER) y validaciones de estado.
-- **Capa de Interfaces de Desacoplamiento (Business Ports / SPI):** Contratos que aíslan el acoplamiento a librerías de terceros y servicios de red.
+### ADR-002: Estándar Criptográfico de Firma Digital SUNAT
+- **Estado:** Aprobado.
+- **Decisión:** Se adopta **XMLDSig Enveloped** (Firma Digital Enveloping según normativa SUNAT RS 097-2012 y especificaciones UBL 2.1), alojando el nodo `<ds:Signature>` dentro de la extensión `<ext:UBLExtension>/<ext:ExtensionContent>`. Se descarta la referencia a perfiles no homologados por SUNAT.
 
-### 2.3 Interfaces de Desacoplamiento Mandatorias
+### ADR-003: Selección de Stack Tecnológico de Clientes Multiplataforma
+- **Estado:** Aprobado.
+- **Decisión:**  
+  1. **Cliente Windows Desktop:** C# con .NET 8 (WPF / WinUI 3), empaquetado en instalador formal de Windows `.msi` mediante WiX Toolset.  
+  2. **Cliente Android Mobile:** Kotlin con Jetpack Compose, empaquetado en archivo `.apk` firmado.  
+  3. **Modelo:** Clientes delgados (*thin clients*) que consumen exclusivamente la API REST centralizada (OpenAPI 3.1). **La custodia del certificado digital (PKCS#12), la firma digital XMLDSig y el envío a SUNAT/OSE se centralizan en el backend de servicios.**
+
+---
+
+## 3. Fase Inicial: Monolito Modular MVC
+
+### 3.1 Descomposición en Capas y Responsabilidades
+- **Capa de Controladores (Presentation Layer):** Recibe las solicitudes HTTP/REST o eventos de UI local (`InvoiceController`, `NoteController`, `SummaryVoidController`, `LedgerController`, `MigrationController`, `InventoryController`), valida sintácticamente los DTOs de entrada y delega al servicio correspondiente.
+- **Capa de Servicios de Aplicación (Application Services):** Orquesta los casos de uso (`InvoicingService`, `NoteService`, `SummaryVoidService`, `LedgerService`, `MigrationService`, `InventoryService`).
+- **Capa de Dominio (Domain Layer):** Entidades puras (`Invoice`, `CreditDebitNote`, `InventoryMovement`, `MigrationBatch`, `Product`) con reglas invariantes, precisión decimal (`Decimal`) y validaciones tributarias (`VAL-*`).
+- **Capa de Interfaces de Desacoplamiento (Business Ports / SPI):** Contratos que aíslan librerías externas, acceso a datos y comunicaciones.
+
+### 3.2 Interfaces de Desacoplamiento Mandatorias en MVC
 
 ```mermaid
 classDiagram
-    class IUblBuilderService {
+    class IUblGeneratorPort {
         <<interface>>
-        +buildInvoiceXml(invoice: Invoice): String
+        +generateInvoiceXml(invoice: Invoice): String
+        +generateNoteXml(note: CreditDebitNote): String
     }
-    class IDigitalSignatureService {
+    class IXmlValidatorPort {
+        <<interface>>
+        +validateAgainstXsd(xmlContent: String, xsdSchema: String): Boolean
+    }
+    class IDigitalSignaturePort {
         <<interface>>
         +signXml(xmlContent: String, certKeyId: String): String
         +extractDigest(signedXml: String): String
     }
-    class ISunatOseClient {
+    class ISunatOsePort {
         <<interface>>
         +sendBill(zipContent: byte[], fileName: String): CdrResponse
+        +sendSummary(zipContent: byte[], fileName: String): TicketResponse
         +getStatus(ticket: String): CdrResponse
     }
     class IDocumentStorageService {
@@ -50,113 +81,104 @@ classDiagram
         +storeDocument(path: String, content: byte[]): String
         +retrieveDocument(path: String): byte[]
     }
-
-    class OasisUbl21Builder {
-        +buildInvoiceXml(invoice: Invoice): String
+    class IInvoiceRepository {
+        <<interface>>
+        +save(invoice: Invoice): Invoice
+        +findById(id: UUID): Invoice
+        +getNextCorrelative(series: String): Integer
     }
-    class XadesBesSigner {
+    class INoteRepository {
+        <<interface>>
+        +save(note: CreditDebitNote): CreditDebitNote
+        +findById(id: UUID): CreditDebitNote
+        +getNextCorrelative(series: String): Integer
+    }
+    class IInventoryMovementRepository {
+        <<interface>>
+        +save(movement: InventoryMovement): InventoryMovement
+        +findByReference(type: String, docNumber: String): List~InventoryMovement~
+    }
+    class IMigrationBatchRepository {
+        <<interface>>
+        +save(batch: MigrationBatch): MigrationBatch
+        +findById(id: UUID): MigrationBatch
+    }
+    class IProductRepository {
+        <<interface>>
+        +findBySku(sku: String): Product
+        +save(product: Product): Product
+    }
+
+    class UblXsdGeneratorAdapter {
+        +generateInvoiceXml(invoice: Invoice): String
+        +generateNoteXml(note: CreditDebitNote): String
+    }
+    class LxmlXsdValidatorAdapter {
+        +validateAgainstXsd(xmlContent: String, xsdSchema: String): Boolean
+    }
+    class XmlDsigEnvelopedSignerAdapter {
         +signXml(xmlContent: String, certKeyId: String): String
         +extractDigest(signedXml: String): String
     }
-    class SoapSunatOseClient {
+    class SoapSunatOseClientAdapter {
         +sendBill(zipContent: byte[], fileName: String): CdrResponse
+        +sendSummary(zipContent: byte[], fileName: String): TicketResponse
         +getStatus(ticket: String): CdrResponse
     }
-    class LocalFileSystemStorage {
+    class LocalFileSystemStorageAdapter {
         +storeDocument(path: String, content: byte[]): String
         +retrieveDocument(path: String): byte[]
     }
 
-    IUblBuilderService <|.. OasisUbl21Builder
-    IDigitalSignatureService <|.. XadesBesSigner
-    ISunatOseClient <|.. SoapSunatOseClient
-    IDocumentStorageService <|.. LocalFileSystemStorage
+    IUblGeneratorPort <|.. UblXsdGeneratorAdapter
+    IXmlValidatorPort <|.. LxmlXsdValidatorAdapter
+    IDigitalSignaturePort <|.. XmlDsigEnvelopedSignerAdapter
+    ISunatOsePort <|.. SoapSunatOseClientAdapter
+    IDocumentStorageService <|.. LocalFileSystemStorageAdapter
 ```
 
-1. `IUblBuilderService`: Aísla la serialización XML según el estándar OASIS UBL 2.1. Permite modificar las plantillas XML o namespaces sin tocar el dominio de la factura.
-2. `IDigitalSignatureService`: Aísla el estándar criptográfico de firma digital XAdES-BES y la gestión del almacén de certificados PKCS#12 (`.p12` / `.pfx`), abstrayendo librerías criptográficas de bajo nivel.
-3. `ISunatOseClient`: Aísla la comunicación por protocolo SOAP con los webservices de SUNAT (`billService`) u OSEs autorizadas. Permite alternar entre emitir directamente a SUNAT o derivar a una OSE homologada cambiando únicamente la configuración.
-4. `IDocumentStorageService`: Aísla el guardado físico de archivos binarios (XML firmados, CDRs `.zip`, PDFs generados), soportando almacenamiento en disco local en fase monolítica o buckets en la nube en fases posteriores.
-
-El diagrama detallado se encuentra en `specs/diagramas/mvc.puml`.
-
 ---
 
-## 3. Hoja de Ruta de Evolución: De MVC a Arquitectura Hexagonal
+## 4. Hoja de Ruta de Evolución: De MVC a Arquitectura Hexagonal
 
-### 3.1 Proyección hacia Puertos y Adaptadores (Ports & Adapters)
+### 4.1 Proyección hacia Puertos y Adaptadores (Ports & Adapters)
 En la evolución hacia Arquitectura Hexagonal:
-- **El núcleo (Core)** queda completamente ciego al mundo exterior.
-- Los controladores se convierten en **Adaptadores Primarios (Driving Adapters)** que consumen **Puertos de Entrada (Inbound Ports / Use Cases)**: `IRegisterInvoiceUseCase`, `IIssueInvoiceSunatUseCase`, `IMigrateLegacyBatchUseCase`.
-- Las interfaces de persistencia, UBL, firma y comunicación externa se convierten en **Puertos de Salida (Outbound Ports / Driven Ports)** implementados por **Adaptadores Secundarios (Driven Adapters)**:
-  - Puerto `IInvoiceRepositoryPort` $\rightarrow$ Adaptador PostgreSQL / SQLite.
-  - Puerto `IUblGeneratorPort` $\rightarrow$ Adaptador UBL 2.1 JAXB / DOM.
-  - Puerto `IDigitalSignaturePort` $\rightarrow$ Adaptador XAdES-BES.
-  - Puerto `ISunatOsePort` $\rightarrow$ Adaptador SOAP Client / OSE Client.
-  - Puerto `IDocumentStoragePort` $\rightarrow$ Adaptador Local FileSystem / AWS S3 / GCS.
-
-El diagrama completo se encuentra en `specs/diagramas/evolucion-hexagonal.puml`.
-
-### 3.2 Preparación para Microservicios
-Cuando el volumen de transacciones de ABC Software Corp escale, el monolito modular y hexagonalizado se podrá particionar limpiamente a lo largo de los límites de sus agregados (*Bounded Contexts*):
-1. **Servicio de Facturación Electrónica (CPE Service):** Dominio `Invoice`, emisor, motor UBL, firma y comunicación OSE.
-2. **Servicio de Inventario y Almacén (Warehouse Service):** Dominio `InventoryMovement`, `Product`, stock y kardex.
-3. **Servicio de Ingesta y Migración (Migration Worker):** Dominio `MigrationBatch`, procesamiento batch asíncrono.
+- **El núcleo (Core)** queda completamente ciego a frameworks y librerías externas.
+- Los controladores se convierten en **Adaptadores Primarios (Driving Adapters)** que consumen **Puertos de Entrada (Inbound Ports / Use Cases)**: `IRegisterInvoiceUseCase`, `IIssueInvoiceSunatUseCase`, `IIssueNoteSunatUseCase`, `IProcessDailySummaryUseCase`, `ISendVoidCommunicationUseCase`, `IGenerateLedgersUseCase`, `IMigrateLegacyBatchUseCase`.
+- Las interfaces de persistencia, UBL, firma y comunicación externa se convierten en **Puertos de Salida (Outbound Ports / Driven Ports)**:
+  - `IInvoiceRepositoryPort`, `INoteRepositoryPort`, `IInventoryRepositoryPort` $\rightarrow$ Adaptador PostgreSQL / SQLite.
+  - `IUblGeneratorPort` $\rightarrow$ Adaptador basado en clases generadas del XSD (`UblXsdGeneratorAdapter`).
+  - `IXmlValidatorPort` $\rightarrow$ Adaptador validador XSD (`LxmlXsdValidatorAdapter`).
+  - `IDigitalSignaturePort` $\rightarrow$ Adaptador XMLDSig Enveloped.
+  - `ISunatOsePort` $\rightarrow$ Adaptador SOAP Client (BillService).
+  - `IDocumentStoragePort` $\rightarrow$ Adaptador Local FileSystem / S3 Storage.
 
 ---
 
-## 4. Estrategia de Distribución y Multiplataforma (Windows y Android)
-
-### 4.1 Análisis de Factibilidad y Decisiones de Diseño
+## 5. Estrategia de Distribución y Multiplataforma (Windows y Android)
 
 ```mermaid
 graph TD
-    subgraph Shared Core
-        Core[Business Logic / API Clients / DTOs]
-    end
-
     subgraph Windows Desktop Environment
-        WinApp[Desktop Client: .NET WPF / WinUI 3 or Flutter Desktop]
-        WinInstaller[MSI / MSIX Installer via WiX Toolset]
-        WinApp --> Core
+        WinApp[Desktop Client: C# .NET 8 WPF / WinUI 3]
+        WinInstaller[Instalador MSI vía WiX Toolset]
         WinApp -.-> WinInstaller
     end
 
     subgraph Android Mobile Environment
-        AndroidApp[Mobile App: Kotlin / Jetpack Compose or Flutter Mobile]
-        AndroidApk[Signed APK Package]
-        AndroidApp --> Core
+        AndroidApp[Mobile App: Kotlin con Jetpack Compose]
+        AndroidApk[Paquete APK Firmado]
         AndroidApp -.-> AndroidApk
     end
 
     subgraph Centralized Backend Service
-        Server[Invoicing Backend & OSE Gateway]
+        Server[Backend API REST OpenAPI 3.1 & OSE Gateway<br/>Custodia de Certificado Digital & Firma XMLDSig]
     end
 
-    WinApp -->|HTTPS / REST OpenAPI 3.1| Server
-    AndroidApp -->|HTTPS / REST OpenAPI 3.1| Server
+    WinApp -->|HTTPS / REST OpenAPI 3.1 (bearerAuth)| Server
+    AndroidApp -->|HTTPS / REST OpenAPI 3.1 (bearerAuth)| Server
 ```
 
-#### Modelo Arquitectónico Propuesto: Cliente Ligero Multiplataforma + API Centralizada
-1. **Arquitectura Cliente-Servidor Desacoplada:**
-   - La lógica pesada de firma digital, comunicación SOAP con SUNAT/OSE, resguardo de certificados PKCS#12 y persistencia relacional se hospeda en el backend central (expuesto mediante la API REST OpenAPI 3.1 definida en `specs/05-endpoints-openapi.yaml`).
-   - Los clientes Windows y Android actúan como interfaces ricas de usuario que consumen los contratos DTO estandarizados.
-
-2. **Estrategia Windows (MSI):**
-   - **Tecnología sugerida:** Aplicación de escritorio .NET (WPF / WinUI 3) o Flutter Desktop.
-   - **Empaquetado:** Generación de instalador estándar de Windows `.msi` mediante WiX Toolset, incluyendo dependencias (.NET Runtime) y configuración de endpoint.
-
-3. **Estrategia Android (APK):**
-   - **Tecnología sugerida:** Aplicación nativa Android en Kotlin (Jetpack Compose) o Flutter Mobile.
-   - **Empaquetado:** Archivo instalador `.apk` firmado para distribución interna o sideloading en dispositivos POS / smartphones de almacén y vendedores en ruta.
-
-### 4.2 Limitaciones Técnicas y Consideraciones Operativas
-
-| Aspecto | Windows (Escritorio / MSI) | Android (Móvil / Tablet / APK) |
-| :--- | :--- | :--- |
-| **Resguardo de Certificado Digital** | Posible almacenar archivo `.pfx` en almacén de certificados de Windows (CryptoAPI). Riesgo moderado en equipos compartidos. | **Alto riesgo de seguridad:** No se recomienda almacenar el certificado digital tributario en terminales móviles. La firma debe realizarse en el servidor backend. |
-| **Generación y Firma Local** | Alta capacidad de cómputo para procesar XMLs pesados y firmar localmente en contingencia. | Limitaciones de batería y memoria; conectividad intermitente en almacenes requiere cola local con sincronización diferida. |
-| **Conectividad a SUNAT / OSE** | Habitualmente en red corporativa cableada/Wi-Fi estable. | Conexión móvil variable (4G/5G/Wi-Fi); propenso a tiempos de espera (timeouts) en llamadas SOAP directas. |
-| **Actualizaciones de Software** | El instalador MSI requiere políticas de despliegue corporativo (GPO / SCCM) o módulo de auto-actualización. | La distribución por APK directo requiere habilitar "Orígenes desconocidos" en Android o gestionar MDM corporativo. |
-
-> **Decisión Arquitectónica Clave:** Para garantizar la seguridad del certificado digital y la integridad tributaria, **la firma digital y el envío a SUNAT/OSE se centralizan en el backend de servicios**. Los instaladores MSI y APK proveen la experiencia nativa de captura, consulta, lectura de códigos de barra e impresión de tickets de venta.
+### Justificación de Centralización de Firma y Envío
+1. **Seguridad del Certificado:** Almacenar certificados `.pfx` en dispositivos móviles de almacén o terminales POS de escritorio abiertas presenta un riesgo inaceptable de extracción de clave privada.
+2. **Confiabilidad:** Las conexiones móviles 4G/5G en almacenes son propensas a desconexiones durante llamadas SOAP síncronas pesadas. El servidor backend asegura transaccionalidad, colas de reintento idempotentes y trazabilidad central.

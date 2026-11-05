@@ -1,10 +1,10 @@
 # SPEC — Requisitos del Sistema y Casos de Uso (ABC Software Corp)
 
-**Versión:** 1.0.0  
-**Fecha:** 22 de octubre de 2026  
-**Fase:** Fase 1 — Especificación Técnica Spec-First  
+**Versión:** 2.0.0  
+**Fecha:** 5 de noviembre de 2026  
+**Fase:** Fase 2 — Corrección y Ampliación Spec-First  
 **Autor:** Senior Software Architect  
-**Estado:** BORRADOR — PENDIENTE DE REVISIÓN
+**Estado:** REVISADO — APROBADO PARA FASE 2
 
 ---
 
@@ -12,7 +12,7 @@
 
 El presente documento define los requisitos funcionales, requisitos no funcionales, reglas de negocio y casos de uso formalizados para la transformación del software básico de almacén de **ABC Software Corp** en un sistema robusto de facturación electrónica compatible con el estándar internacional **OASIS UBL 2.1** y las normativas de la **Superintendencia Nacional de Aduanas y de Administración Tributaria (SUNAT)** de Perú.
 
-Este documento sirve como base técnica autoritativa para el modelo de dominio, contratos de API (OpenAPI 3.1), matriz de trazabilidad y arquitectura de software sin requerir implementación de código ejecutable en esta fase.
+Esta especificación cubre la emisión de **Facturas Electrónicas (01)**, **Boletas de Venta Electrónicas (03)**, **Notas de Crédito Electrónicas (07)** y **Notas de Débito Electrónicas (08)**, así como los mecanismos de contingencia y reporte masivo (**Resumen Diario de Boletas** y **Comunicación de Baja**), junto con la generación de libros contables electrónicos (**Registro de Ventas e Ingresos - Formato 14.1** y **Registro de Inventario Permanente en Unidades Físicas - Formato 12.1**).
 
 ---
 
@@ -20,15 +20,15 @@ Este documento sirve como base técnica autoritativa para el modelo de dominio, 
 
 | ID | Requisito Funcional | Descripción | Casos de Uso Asociados |
 | :--- | :--- | :--- | :--- |
-| **RF-01** | Emisión de Factura Electrónica | Permitir el registro y estructuración de comprobantes de pago tipo Factura (código '01') conforme al estándar UBL 2.1 e instrucciones de SUNAT. | CU-01, CU-02 |
-| **RF-02** | Validación Tributaria Previa | Validar de forma síncrona el RUC emisor/receptor, formato de serie/correlativo, coherencia de afectación al IGV, tasas y cálculos aritméticos antes de persistir o emitir. | CU-01, CU-02 |
-| **RF-03** | Generación de XML UBL 2.1 | Construir la estructura XML bajo el namespace OASIS UBL Invoice 2.1 y la extensión `ext:UBLExtensions` requerida para la firma digital. | CU-02 |
-| **RF-04** | Firma Digital XAdES-BES | Integrar el componente de firma digital con certificado digital tributario (PKCS#12) generando el resumen `ds:DigestValue` y la firma `ds:SignatureValue`. | CU-02 |
-| **RF-05** | Comunicación con OSE / SUNAT | Gestionar el empaquetado ZIP, invocación SOAP a la OSE/SUNAT, recepción del CDR (Constancia de Recepción) y parseo de códigos de respuesta. | CU-02, CU-03 |
-| **RF-06** | Consulta y Estado de Comprobantes | Consultar el estado operativo y tributario del comprobante (Borrador, Validado, Firmado, Aceptado por SUNAT, Rechazado, Observado). | CU-03 |
-| **RF-07** | Migración de Datos Legados | Ingerir lotes de información histórica del sistema anterior (`fecha`, `ingreso`, `salida`, `producto`, `nro_documento`) asignándolos a movimientos de almacén y referencias comerciales. | CU-04 |
-| **RF-08** | Trazabilidad y Bitácora de Migración | Registrar el resultado de migración por fila, indicando estado (Procesado, Error, Advertencia), mensaje de validación y vínculo con la entidad generada. | CU-04, CU-05 |
-| **RF-09** | Gestión de Catálogos Tributarios | Proveer acceso a catálogos SUNAT requeridos: Catálogo 01 (Tipo de Documento), Catálogo 02 (Moneda), Catálogo 06 (Tipo Doc. Identidad), Catálogo 07 (Afectación al IGV), Catálogo 08 (Sistema de Cálculo ISC). | CU-01, CU-02 |
+| **RF-01** | Emisión de Facturas y Boletas | Registrar y validar comprobantes tipo Factura (`01`, serie `F...`, receptor con RUC) y Boleta de Venta (`03`, serie `B...`, receptor con DNI, RUC o sin documento) bajo estándar UBL 2.1. | CU-01, CU-02 |
+| **RF-02** | Emisión de Notas de Crédito y Débito | Emitir Notas de Crédito (`07`) y Débito (`08`) referenciando documentos válidos previos y especificando motivos normativos según Catálogos 09 y 10 de SUNAT. | CU-06 |
+| **RF-03** | Generación de XML UBL 2.1 | Producir estructuras XML estrictas mediante clases fuertemente tipadas generadas desde los esquemas XSD oficiales de OASIS UBL 2.1, validadas contra XSD antes de su firma. | CU-02, CU-06 |
+| **RF-04** | Firma Digital Enveloping XMLDSig | Firmar digitalmente los comprobantes mediante el estándar XMLDSig Enveloped (`ds:Signature` embebido en `ext:UBLExtensions`), generando `ds:DigestValue` y `ds:SignatureValue`. | CU-02, CU-06 |
+| **RF-05** | Comunicación con OSE / SUNAT | Gestionar el empaquetado ZIP, envío síncrono/asíncrono vía SOAP, recepción de Constancia de Recepción (CDR) y clasificación de estados según rangos de respuesta. | CU-02, CU-03, CU-06, CU-07, CU-08 |
+| **RF-06** | Resumen Diario y Comunicación de Baja | Enviar paquetes de Resumen Diario para Boletas de Venta y emitir Comunicaciones de Baja para anulación de Facturas y Notas vinculadas, gestionando tickets asíncronos (`202 Accepted`). | CU-07, CU-08 |
+| **RF-07** | Libros Tributarios Electrónicos (14.1 y 12.1) | Generar el Registro de Ventas (Formato 14.1) derivado de los comprobantes emitidos y el Registro de Inventario Permanente en Unidades Físicas (Formato 12.1 - Kardex) vinculado a la información migrada. | CU-09, CU-10 |
+| **RF-08** | Migración de Datos Legados | Ingerir lotes históricos del almacén básico (`fecha`, `ingreso`, `salida`, `producto`, `nro_documento`) garantizando trazabilidad y preservando `INTERNAL_LEGACY_RECORD`. | CU-04, CU-05 |
+| **RF-09** | Gestión de Catálogos Tributarios | Soportar los catálogos normativos SUNAT: 01 (Tipo Documento), 02 (Moneda), 03 (Unidades de Medida), 06 (Doc. Identidad), 07 (Afectación IGV), 08 (Sistemas ISC), 09/10 (Notas), 51 (Tipo de Operación), 52 (Leyendas). | CU-01, CU-02, CU-06 |
 
 ---
 
@@ -36,30 +36,37 @@ Este documento sirve como base técnica autoritativa para el modelo de dominio, 
 
 | ID | Requisito No Funcional | Criterio de Aceptación / Restricción Técnica |
 | :--- | :--- | :--- |
-| **RNF-01** | Desacoplamiento Arquitectónico | El núcleo de dominio no debe depender de librerías de infraestructura, frameworks web, SOAP de SUNAT ni drivers de base de datos. Se proyecta de MVC a Arquitectura Hexagonal. |
-| **RNF-02** | Multiplataforma y Empaquetado | La solución debe ejecutarse en sistemas Windows y dispositivos móviles Android, considerando distribución futura vía instalador Windows (MSI) y paquete Android (APK). |
-| **RNF-03** | Idempotencia y Consistencia Transaccional | La generación de comprobantes y la migración de lotes deben soportar claves de idempotencia para prevenir duplicidades tributarias o de inventario. |
-| **RNF-04** | Seguridad y Resguardo Criptográfico | Las llaves privadas del certificado digital tributario deben resguardarse en almacén seguro; las contraseñas no se expondrán en texto plano. |
-| **RNF-05** | Conformidad con Estándares Abiertos | El esquema de comunicación API debe cumplir formalmente con la especificación OpenAPI 3.1.0 y las estructuras de documentos con OASIS UBL 2.1. |
+| **RNF-01** | Arquitectura Limpia y Desacoplada | Núcleo de dominio ciego a detalles de infraestructura. Evolución planificada de Monolito Modular MVC a Arquitectura Hexagonal mediante interfaces/puertos explícitos. |
+| **RNF-02** | Multiplataforma y Distribución | Clientes delgados de escritorio Windows (C# .NET 8 / WPF / WinUI 3 con instalador MSI) y móvil Android (Kotlin Jetpack Compose en APK), consumiendo la API centralizada. |
+| **RNF-03** | Idempotencia y Reintentos Seguros | Operaciones de emisión y migración soportan cabecera `X-Idempotency-Key` para evitar comprobantes duplicados y garantizar concurrencia segura. |
+| **RNF-04** | Seguridad y Criptografía Centralizada | El certificado digital tributario (PKCS#12) y las operaciones de firma XMLDSig y envío a SUNAT residen exclusivamente en el servidor central seguro; la API requiere `bearerAuth` (JWT). |
+| **RNF-05** | Rigor Normativo y Esquemas Abiertos | API descrita formalmente en OpenAPI 3.1.0 y XMLs producidos exclusivamente mediante clases generadas del XSD oficial de OASIS, sin motores de plantillas de texto. |
 
 ---
 
 ## 4. Reglas de Negocio (RN)
 
-- **RN-01 (Identificación del Receptor):** En comprobantes tipo Factura (código '01'), el adquirente debe identificarse obligatoriamente con RUC de 11 dígitos numéricos válido (Tipo Documento Identidad '6', Catálogo 06 SUNAT) y estado activo/habido.
-- **RN-02 (Serie y Correlativo):** La serie para Facturas electrónicas emitidas desde el sistema del contribuyente (SEE-Del Contribuyente / OSE) debe iniciar con la letra 'F' seguida de 3 caracteres alfanuméricos (ej. `F001`). El correlativo es un número entero entre 1 y 99999999, completado con ceros a la izquierda en la representación impresa y formateado como entero en UBL.
-- **RN-03 (Afectación al IGV - Catálogo 07):** Toda línea de detalle debe contener un código de tipo de afectación al IGV. Si es Gravada (código '10'), se debe calcular el 18% sobre el valor unitario. Si es Exonerada ('20') o Inafecta ('30'), el impuesto IGV es 0.00 pero debe especificarse la base imponible y el código tributario correspondiente (`VAT` / `9997` / `9998`).
-- **RN-04 (Impuesto Selectivo al Consumo - ISC y Catálogo 08):** Cuando aplique ISC a productos gravados (ej. licores, bebidas azucaradas, combustibles comercializados por mayoristas), se debe aplicar uno de los sistemas previstos en el Catálogo 08:
-  - Sistema al Valor (al porcentaje).
-  - Sistema Específico (monto fijo por unidad física).
-  - Sistema al Precio de Venta al Público.
-  El ISC forma parte de la base imponible del IGV.
-- **RN-05 (Impuesto al Consumo de Bolsas de Plástico - ICBPER):** Si la transacción incluye bolsas plásticas de un solo uso, se liquida el monto unitario fijo vigente por bolsa. El ICBPER no forma parte de la base imponible del IGV ni del ISC y se suma directamente al total a pagar.
-- **RN-06 (Totalización Monetaria):**
-  $$\text{Importe Total} = \text{Total Valor Venta} - \text{Total Descuentos} + \text{Total IGV} + \text{Total ISC} + \text{Total ICBPER} + \text{Total Otros Cargos}$$
-  Los cálculos deben respetar un redondeo monetario a 2 decimales para totales y hasta 10 decimales para valores unitarios.
-- **RN-07 (Inmutabilidad de Documentos Emitidos):** Un comprobante que cuente con firma digital y constancia CDR de SUNAT/OSE no puede modificarse ni eliminarse en base de datos. Cualquier ajuste contable debe realizarse mediante Nota de Crédito ('07') o Comunicación de Baja según corresponda.
-- **RN-08 (No Equivalencia Automática de Documentos Legados):** Un `nro_documento` registrado en el sistema anterior de almacén es un identificador interno de control operativo; bajo ninguna circunstancia se convierte automáticamente en una Factura electrónica ni sustituye la serie y correlativo formal de SUNAT.
+- **RN-01 (Identificación del Receptor - Catálogo 06):**
+  - Facturas (`01`): Obligatorio RUC de 11 dígitos numéricos válido (Tipo Documento `'6'`), verificado mediante algoritmo Módulo 11 y con prefijos autorizados (10, 15, 16, 17, 20).
+  - Boletas de Venta (`03`): DNI de 8 dígitos numéricos (Tipo Documento `'1'`), RUC (Tipo `'6'`), Carnet de Extranjería (`'4'`), Pasaporte (`'7'`), o sin documento (`'0'`) para operaciones menores al umbral normativo.
+- **RN-02 (Series y Correlativos):**
+  - Facturas y sus notas asociadas: Serie con patrón `^F[A-Z0-9]{3}$` (ej. `F001`).
+  - Boletas y sus notas asociadas: Serie con patrón `^B[A-Z0-9]{3}$` (ej. `B001`).
+  - Correlativo: Entero secuencial entre 1 y 99,999,999, sin huecos dentro de la misma serie.
+- **RN-03 (Afectación al IGV - Catálogo 07):** Toda línea debe declarar su código de afectación. Para gravadas (`10`), tasa del 18.00%. Para exoneradas (`20` / `9997`) e inafectas (`30` / `9998`), impuesto 0.00 pero base imponible desglosada en sus respectivos subtotales.
+- **RN-04 (Impuesto Selectivo al Consumo - ISC y Catálogo 08):**
+  - Sistema 01 (Al Valor): $\text{ISC} = \text{round2}(\text{valor\_venta} \times \text{tasa})$.
+  - Sistema 02 (Específico): $\text{ISC} = \text{round2}(\text{cantidad} \times \text{monto\_fijo})$.
+  - Sistema 03 (Al PVP): $\text{ISC} = \text{round2}(\text{cantidad} \times \text{PVP} \times \text{tasa})$ *(Fórmula sujeta a confirmación en referencias: PENDIENTE DE VERIFICACIÓN)*.
+  - El ISC forma parte de la base imponible del IGV: $\text{Base IGV} = \text{Valor Venta Gravada} + \text{ISC}$. La base del ISC (`base_isc`) corresponde exclusivamente a la suma del valor venta de las líneas afectas a ISC.
+- **RN-05 (Notas de Crédito y Débito):** Deben referenciar un comprobante previo existente (`referenced_document_series_number` y `referenced_document_type_code`) y declarar un motivo tipificado según Catálogo 09 (NC) o Catálogo 10 (ND).
+- **RN-06 (Totalización Monetaria):** Todos los cálculos deben realizarse con aritmética exacta decimal (`Decimal` de precisión fija, 2 decimales con redondeo `ROUND_HALF_UP` en importes finales; cantidades y valores unitarios con hasta 10 decimales).
+- **RN-07 (Trazabilidad de Rangos de CDR):**
+  - `0100 - 0999`: Excepción técnica transitoria. Reintento automático seguro.
+  - `1000 - 1999`: Error de datos corregible. Se autoriza subsanación y reenvío bajo el mismo número según disposición SUNAT.
+  - `2000 - 3999`: Rechazo tributario definitivo. El comprobante carece de validez fiscal y la numeración no puede reutilizarse.
+  - `≥ 4000`: Aceptado con observaciones. Comprobante legalmente válido emitido con código 0 y advertencias adjuntas.
+- **RN-08 (Tratamiento del Sistema Legado):** Los campos históricos (`fecha`, `ingreso`, `salida`, `producto`, `nro_documento`) alimentan el control de almacén y el Formato 12.1. El campo `nro_documento` se preserva como referencia interna `INTERNAL_LEGACY_RECORD` sin asignarle automáticamente serie ni número fiscal formal de SUNAT.
 
 ---
 
@@ -69,80 +76,35 @@ Este documento sirve como base técnica autoritativa para el modelo de dominio, 
 usecaseDiagram
     actor "Operador Comercial" as Operador
     actor "Administrador / Auditor" as Admin
+    actor "Supervisor Contable" as Contador
     actor "Servicio OSE / SUNAT" as SUNAT
 
     package "Sistema de Facturación ABC" {
-        usecase "CU-01: Registrar y Validar Factura" as CU01
-        usecase "CU-02: Emitir Factura Electrónica (UBL/Firma/Envío)" as CU02
-        usecase "CU-03: Consultar Comprobante y Estado CDR" as CU03
+        usecase "CU-01: Registrar Comprobante (Borrador)" as CU01
+        usecase "CU-02: Emitir Factura/Boleta (XML/Firma/Envío)" as CU02
+        usecase "CU-03: Consultar Comprobante y CDR" as CU03
         usecase "CU-04: Iniciar Migración de Datos Legados" as CU04
         usecase "CU-05: Inspeccionar Trazabilidad de Migración" as CU05
+        usecase "CU-06: Emitir Nota de Crédito / Débito" as CU06
+        usecase "CU-07: Procesar Resumen Diario de Boletas" as CU07
+        usecase "CU-08: Enviar Comunicación de Baja" as CU08
+        usecase "CU-09: Generar Registro de Ventas (Formato 14.1)" as CU09
+        usecase "CU-10: Generar Kardex Físico (Formato 12.1)" as CU10
     }
 
     Operador --> CU01
     Operador --> CU02
     Operador --> CU03
+    Operador --> CU06
     Admin --> CU04
     Admin --> CU05
+    Contador --> CU07
+    Contador --> CU08
+    Contador --> CU09
+    Contador --> CU10
+
     CU02 ..> SUNAT : Envío SOAP / CDR
+    CU06 ..> SUNAT : Envío SOAP / CDR
+    CU07 ..> SUNAT : Envío Lote / Ticket
+    CU08 ..> SUNAT : Envío Lote / Ticket
 ```
-
-### CU-01: Registrar y Validar Factura (Borrador)
-- **Actor Principal:** Operador Comercial / Facturador.
-- **Precondiciones:** El cliente debe estar registrado con RUC válido en el sistema o proporcionarse en la solicitud; los productos deben contar con precio base, unidad de medida y régimen de afectación.
-- **Flujo Principal:**
-  1. El operador ingresa los datos de cabecera (cliente, moneda, fecha de emisión, fecha de vencimiento opcional).
-  2. El operador añade ítems de detalle (producto, cantidad, valor unitario, afectación IGV, ISC/ICBPER si aplica).
-  3. El sistema valida reglas de negocio RN-01, RN-02, RN-03, RN-04, RN-05 y RN-06.
-  4. El sistema almacena la factura con estado `BORRADOR` y retorna el identificador interno, los totales calculados y el reporte de validación conforme.
-- **Flujos Alternativos / Excepciones:**
-  - *3a. RUC inválido o longitud distinta de 11 dígitos:* El sistema rechaza el registro con código de error `VAL-001` y lista los campos infractores.
-  - *3b. Discrepancia aritmética en sumatorias:* El sistema retorna error `VAL-002` indicando diferencia entre suma de ítems y totales declarados.
-
-### CU-02: Solicitar Emisión Electrónica
-- **Actor Principal:** Operador Comercial / Proceso Desatendido.
-- **Precondiciones:** La factura debe existir en estado `BORRADOR` o `VALIDADO`.
-- **Flujo Principal:**
-  1. El operador solicita la emisión electrónica indicando el ID de la factura.
-  2. El sistema reserva el número correlativo oficial según la serie configurada (ej. `F001-00000124`).
-  3. El sistema construye el árbol XML cumpliendo la gramática OASIS UBL Invoice 2.1.
-  4. El servicio criptográfico firma el XML usando el certificado digital de ABC Software Corp, obteniendo el `ds:DigestValue` (código hash) y `ds:SignatureValue`.
-  5. El sistema empaqueta el XML firmado en formato ZIP (`{RUC}-01-{SERIE}-{NUMERO}.zip`).
-  6. El sistema envía el ZIP al webservice de la OSE o SUNAT mediante protocolo SOAP.
-  7. El sistema recibe la respuesta con el CDR (Constancia de Recepción), extrae el código de respuesta (código `0` = Aceptado) y almacena el XML firmado y CDR.
-  8. El estado del comprobante pasa a `EMITIDO_ACEPTADO`.
-- **Flujos Alternativos / Excepciones:**
-  - *6a. Falla de conexión con OSE/SUNAT:* La factura queda en estado `FIRMADO_PENDIENTE_ENVIO`. Se programa reintento y se notifica al usuario que el documento tiene valor temporal contingente según normativa.
-  - *7a. Rechazo por parte de OSE/SUNAT:* Si el CDR retorna código de error (ej. error 2014, 2118), el comprobante pasa a `RECHAZADO`, registrando la observación técnica de SUNAT sin reusar el correlativo.
-
-### CU-03: Consultar Comprobante y Estado Tributario
-- **Actor Principal:** Operador Comercial / Cliente / Auditor.
-- **Precondiciones:** Identificador único o serie-correlativo del comprobante.
-- **Flujo Principal:**
-  1. El usuario solicita el estado y detalle del comprobante.
-  2. El sistema recupera los datos de dominio, el estado del ciclo de vida, el resumen hash (`ds:DigestValue`), el estado de aceptación en SUNAT y los enlaces de descarga (XML firmado, CDR, PDF).
-  3. El usuario visualiza la información consolidada.
-
-### CU-04: Iniciar Migración de Datos Legados de Almacén
-- **Actor Principal:** Administrador de TI / Encargado de Almacén.
-- **Precondiciones:** Archivo o carga de datos estructurada con las columnas históricas: `fecha`, `ingreso`, `salida`, `producto`, `nro_documento`.
-- **Flujo Principal:**
-  1. El administrador envía un lote de registros legados indicando una descripción y fuente de origen.
-  2. El sistema genera un `LoteMigracion` en estado `EN_PROCESO`.
-  3. Para cada fila del lote:
-     a. Valida el formato de fecha ISO 8601.
-     b. Normaliza cantidades: `ingreso` (entrada a inventario) y `salida` (egreso de inventario).
-     c. Homologa el identificador o descripción de `producto` con el catálogo maestro de productos.
-     d. Registra `nro_documento` como `referencia_documento_origen` de tipo documento interno (código '00' o interno).
-     e. Genera un movimiento de almacén histórico vinculado.
-     f. Registra un registro de trazabilidad con estado `EXITOSO`.
-  4. Al finalizar la totalidad de filas, calcula totales de procesados, advertencias y fallidos, y marca el lote como `FINALIZADO`.
-- **Flujos Alternativos / Excepciones:**
-  - *3a. Fila con datos corruptos o valores negativos simultáneos:* La fila se registra con estado `FALLIDO`, se almacena el mensaje de error y el lote continúa procesando las demás filas.
-
-### CU-05: Inspeccionar Trazabilidad de Migración
-- **Actor Principal:** Administrador de TI / Auditor.
-- **Precondiciones:** Identificador del lote de migración o referencia de documento legado.
-- **Flujo Principal:**
-  1. El usuario consulta el avance de un lote específico o busca el destino de un `nro_documento` antiguo.
-  2. El sistema devuelve el estado consolidado del lote, la tasa de éxito y el listado detallado de filas con sus errores o entidades creadas.

@@ -16,7 +16,7 @@
 
 Bajo las resoluciones **RS N° 097-2012/SUNAT**, **RS N° 234-2006/SUNAT** y el estándar internacional **OASIS UBL 2.1**, se requiere formalizar la emisión electrónica y migrar limpiamente los datos históricos preservando la trazabilidad.
 
-Siguiendo la metodología **Spec-First**, este repositorio contiene la arquitectura completa, modelos de datos, contratos formales y matrices de trazabilidad antes de escribir código de implementación.
+Siguiendo la metodología **Spec-First**, este repositorio contiene la arquitectura completa, modelos de datos, contratos formales y matrices de trazabilidad como base para la implementación desarrollada en la Fase 2.
 
 ---
 
@@ -42,7 +42,6 @@ Siguiendo la metodología **Spec-First**, este repositorio contiene la arquitect
 │   ├── UBL-Invoice-2.1.xml             # Esquema XSD OASIS UBL Invoice 2.1
 │   └── 097-2012.pdf                    # Resolución de Superintendencia SUNAT 097-2012
 ├── CONTEXTO_ANALISIS_PREVIO.md         # Notas preliminares de trabajo
-├── LEEME_PRIMERO.md                    # Guía de orientación del proyecto
 └── PROMPT_PARA_ANTIGRAVITY.md          # Instrucción del caso de estudio
 ```
 
@@ -125,4 +124,36 @@ Para renderizar los diagramas PlantUML:
 ---
 
 ## ⚖️ Licencia y Régimen Académico
-Documento elaborado con fines de especificación de arquitectura de software bajo metodología Spec-First. No incluye código ejecutable de backend, frontend ni credenciales reales de SUNAT/OSE conforme a las restricciones del proyecto.
+Documento elaborado con fines de especificación de arquitectura de software bajo metodología Spec-First. La Fase 2 incorpora una implementación ejecutable en Python para generar XML UBL 2.1. No incluye firma digital, envío a SUNAT/OSE ni credenciales tributarias reales.
+
+## Segundo parcial - Generacion XML Invoice UBL 2.1
+
+### Objetivo
+Implementacion en Python de un generador de comprobantes XML
+a partir del esquema Invoice XSD UBL 2.1.
+
+### Estructura
+- implementacion/abc_cpe/dominio/: modelos y reglas de negocio.
+- implementacion/abc_cpe/aplicacion/: servicio de generacion XML.
+- implementacion/abc_cpe/infraestructura/: generador y validador XSD.
+- implementacion/xsd/: esquemas UBL 2.1.
+- implementacion/abc_cpe/ubl_generado/: clases Python del XSD.
+- tests_specs/: pruebas automatizadas.
+
+### Instalacion
+Crear un entorno virtual e instalar requirements.txt.
+Configurar PYTHONPATH con la carpeta implementacion.
+
+### Pruebas de generacion XML
+    .\.venv\Scripts\python.exe -m pytest -v tests_specs/test_generacion_xml.py tests_specs/test_xsd_integration.py
+
+Resultado local: 49 pruebas aprobadas.
+
+### Todas las pruebas
+    .\.venv\Scripts\python.exe -m pytest -q tests_specs
+
+Resultado local: 225 pruebas aprobadas.
+
+### Alcance
+Generacion de XML UBL 2.1 y validacion contra Invoice XSD 2.1.
+No incluye firma digital ni envio a SUNAT.

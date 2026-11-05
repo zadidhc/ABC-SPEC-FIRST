@@ -5,7 +5,7 @@ skinparam packageStyle rectangle
 skinparam handwritten false
 skinparam classAttributeIconSize 0
 
-title ABC Software Corp — Modular Monolith Architecture (MVC Pattern)
+title ABC Software Corp — Arquitectura Monolito Modular (Patrón MVC)
 
 package "Presentation Layer (Controllers)" as PresentationLayer {
     class InvoiceController {
@@ -14,6 +14,26 @@ package "Presentation Layer (Controllers)" as PresentationLayer {
         +getInvoiceById(id: UUID): Response
         +downloadInvoiceXml(id: UUID): FileStream
         +downloadInvoiceCdr(id: UUID): FileStream
+        +downloadInvoicePdf(id: UUID): FileStream
+    }
+
+    class NoteController {
+        +createNote(req: CreateNoteRequest): Response
+        +issueNote(id: UUID): Response
+        +getNoteById(id: UUID): Response
+        +downloadNoteXml(id: UUID): FileStream
+        +downloadNoteCdr(id: UUID): FileStream
+    }
+
+    class SummaryVoidController {
+        +processDailySummary(req: CreateDailySummaryRequest): Response
+        +sendVoidCommunication(req: CreateVoidCommunicationRequest): Response
+        +getTicketStatus(ticket: String): Response
+    }
+
+    class LedgerController {
+        +getSalesLedger(period: String): Response
+        +getPhysicalInventoryLedger(period: String): Response
     }
 
     class MigrationController {
@@ -31,13 +51,42 @@ package "Presentation Layer (Controllers)" as PresentationLayer {
 package "Application Services Layer" as ApplicationLayer {
     class InvoicingService {
         -invoiceRepository: IInvoiceRepository
-        -ublBuilder: IUblBuilderService
-        -signatureService: IDigitalSignatureService
-        -sunatOseClient: ISunatOseClient
+        -ublGenerator: IUblGeneratorPort
+        -xmlValidator: IXmlValidatorPort
+        -signatureService: IDigitalSignaturePort
+        -sunatOseClient: ISunatOsePort
+        -documentStorageService: IDocumentStorageService
         -inventoryService: InventoryService
         +registerAndValidate(dto: CreateInvoiceRequest): Invoice
         +issueInvoice(invoiceId: UUID): IssuanceResult
         +getInvoiceById(invoiceId: UUID): Invoice
+    }
+
+    class NoteService {
+        -noteRepository: INoteRepository
+        -invoiceRepository: IInvoiceRepository
+        -ublGenerator: IUblGeneratorPort
+        -xmlValidator: IXmlValidatorPort
+        -signatureService: IDigitalSignaturePort
+        -sunatOseClient: ISunatOsePort
+        -documentStorageService: IDocumentStorageService
+        +createNote(dto: CreateNoteRequest): CreditDebitNote
+        +issueNote(noteId: UUID): IssuanceResult
+    }
+
+    class SummaryVoidService {
+        -sunatOseClient: ISunatOsePort
+        -documentStorageService: IDocumentStorageService
+        +sendDailySummary(dto: CreateDailySummaryRequest): TicketResponse
+        +sendVoidCommunication(dto: CreateVoidCommunicationRequest): TicketResponse
+        +checkTicket(ticket: String): TicketStatusResponse
+    }
+
+    class LedgerService {
+        -invoiceRepository: IInvoiceRepository
+        -inventoryMovementRepository: IInventoryMovementRepository
+        +generateSalesLedger(period: String): SalesLedgerPeriodResponse
+        +generatePhysicalInventory(period: String): PhysicalInventoryPeriodResponse
     }
 
     class MigrationService {
@@ -59,11 +108,17 @@ package "Domain Layer (Entities & Invariants)" as DomainLayer {
     class Invoice {
         +series: String
         +number: Integer
-        +status: InvoiceStatus
+        +status: DocumentStatus
         +calculateTotals(): void
         +validateTaxInvariants(): void
     }
-    class InvoiceLine {
+    class CreditDebitNote {
+        +noteTypeCode: String
+        +referencedDocumentSeriesNumber: String
+        +discrepancyCode: String
+        +calculateTotals(): void
+    }
+    class DocumentItemLine {
         +calculateSubtotal(): void
         +calculateTaxes(): void
     }
@@ -84,7 +139,13 @@ package "Decoupling Interfaces (Business Ports / SPI)" as InterfaceLayer {
     interface IInvoiceRepository {
         +save(invoice: Invoice): Invoice
         +findById(id: UUID): Invoice
-        +getNextSequenceNumber(series: String): Integer
+        +getNextCorrelative(series: String): Integer
+    }
+
+    interface INoteRepository {
+        +save(note: CreditDebitNote): CreditDebitNote
+        +findById(id: UUID): CreditDebitNote
+        +getNextCorrelative(series: String): Integer
     }
 
     interface IInventoryMovementRepository {
@@ -97,17 +158,28 @@ package "Decoupling Interfaces (Business Ports / SPI)" as InterfaceLayer {
         +findById(id: UUID): MigrationBatch
     }
 
-    interface IUblBuilderService {
-        +buildInvoiceXml(invoice: Invoice): String
+    interface IProductRepository {
+        +findBySku(sku: String): Product
+        +save(product: Product): Product
     }
 
-    interface IDigitalSignatureService {
+    interface IUblGeneratorPort {
+        +generateInvoiceXml(invoice: Invoice): String
+        +generateNoteXml(note: CreditDebitNote): String
+    }
+
+    interface IXmlValidatorPort {
+        +validateAgainstXsd(xmlContent: String, xsdSchema: String): Boolean
+    }
+
+    interface IDigitalSignaturePort {
         +signXml(xmlContent: String, certKeyId: String): String
         +extractDigest(signedXml: String): String
     }
 
-    interface ISunatOseClient {
+    interface ISunatOsePort {
         +sendBill(zipContent: byte[], fileName: String): CdrResponse
+        +sendSummary(zipContent: byte[], fileName: String): TicketResponse
         +getStatus(ticket: String): CdrResponse
     }
 
@@ -119,35 +191,58 @@ package "Decoupling Interfaces (Business Ports / SPI)" as InterfaceLayer {
 
 package "Infrastructure Layer (Persistence & Adapters)" as InfrastructureLayer {
     class SqlInvoiceRepository implements IInvoiceRepository
+    class SqlNoteRepository implements INoteRepository
     class SqlInventoryMovementRepository implements IInventoryMovementRepository
     class SqlMigrationBatchRepository implements IMigrationBatchRepository
-    class OasisUbl21Builder implements IUblBuilderService
-    class XadesBesSigner implements IDigitalSignatureService
-    class SoapSunatOseClient implements ISunatOseClient
-    class LocalFileSystemStorage implements IDocumentStorageService
+    class SqlProductRepository implements IProductRepository
+    class UblXsdGeneratorAdapter implements IUblGeneratorPort
+    class LxmlXsdValidatorAdapter implements IXmlValidatorPort
+    class XmlDsigEnvelopedSignerAdapter implements IDigitalSignaturePort
+    class SoapSunatOseClientAdapter implements ISunatOsePort
+    class LocalFileSystemStorageAdapter implements IDocumentStorageService
 }
 
-' Layer relationships
+' Relaciones de capas
 InvoiceController --> InvoicingService
+NoteController --> NoteService
+SummaryVoidController --> SummaryVoidService
+LedgerController --> LedgerService
 MigrationController --> MigrationService
 InventoryController --> InventoryService
 
 InvoicingService --> IInvoiceRepository
-InvoicingService --> IUblBuilderService
-InvoicingService --> IDigitalSignatureService
-InvoicingService --> ISunatOseClient
+InvoicingService --> IUblGeneratorPort
+InvoicingService --> IXmlValidatorPort
+InvoicingService --> IDigitalSignaturePort
+InvoicingService --> ISunatOsePort
 InvoicingService --> IDocumentStorageService
 InvoicingService --> InventoryService
 InvoicingService --> Invoice
 
+NoteService --> INoteRepository
+NoteService --> IInvoiceRepository
+NoteService --> IUblGeneratorPort
+NoteService --> IXmlValidatorPort
+NoteService --> IDigitalSignaturePort
+NoteService --> ISunatOsePort
+NoteService --> IDocumentStorageService
+NoteService --> CreditDebitNote
+
+SummaryVoidService --> ISunatOsePort
+SummaryVoidService --> IDocumentStorageService
+
+LedgerService --> IInvoiceRepository
+LedgerService --> IInventoryMovementRepository
+
 MigrationService --> IMigrationBatchRepository
 MigrationService --> InventoryService
+MigrationService --> IProductRepository
 MigrationService --> MigrationBatch
 
 InventoryService --> IInventoryMovementRepository
 InventoryService --> InventoryMovement
 
-Invoice *-- InvoiceLine
-MigrationBatch *-- MigrationRecord
+Invoice *-- DocumentItemLine
+CreditDebitNote *-- DocumentItemLine
 
 @enduml

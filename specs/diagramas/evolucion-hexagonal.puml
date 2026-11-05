@@ -4,13 +4,13 @@ skinparam componentStyle uml2
 skinparam packageStyle rectangle
 skinparam handwritten false
 
-title ABC Software Corp — Evolution to Hexagonal Architecture (Ports & Adapters)
+title ABC Software Corp — Evolución a Arquitectura Hexagonal (Ports & Adapters)
 
 package "Primary Driving Adapters (Inbound)" as InboundAdapters {
-    component [Windows Desktop UI (WPF / WinUI)] as WindowsUI
-    component [Android Mobile App (Jetpack Compose)] as AndroidUI
-    component [REST API Controller (OpenAPI 3.1)] as RestApi
-    component [CLI / Batch File Importer] as CliBatch
+    component [Windows Desktop Client (C# .NET 8 WinUI 3)] as WindowsUI
+    component [Android Mobile App (Kotlin Jetpack Compose)] as AndroidUI
+    component [REST API Controllers (OpenAPI 3.1)] as RestApi
+    component [CLI / Batch Migration Importer] as CliBatch
 }
 
 package "Application Core (Inner Hexagon)" as CoreHexagon {
@@ -21,8 +21,18 @@ package "Application Core (Inner Hexagon)" as CoreHexagon {
         interface IIssueInvoiceSunatUseCase {
             +execute(command: IssueInvoiceCommand): IssuanceResult
         }
-        interface IGetInvoiceUseCase {
-            +getById(id: UUID): InvoiceResponse
+        interface IIssueNoteSunatUseCase {
+            +execute(command: IssueNoteCommand): IssuanceResult
+        }
+        interface IProcessDailySummaryUseCase {
+            +execute(command: ProcessSummaryCommand): TicketResult
+        }
+        interface ISendVoidCommunicationUseCase {
+            +execute(command: SendVoidCommand): TicketResult
+        }
+        interface IGenerateLedgersUseCase {
+            +getSalesLedger(period: String): SalesLedgerResult
+            +getPhysicalInventory(period: String): InventoryLedgerResult
         }
         interface IMigrateLegacyBatchUseCase {
             +execute(command: MigrateBatchCommand): BatchResult
@@ -30,24 +40,33 @@ package "Application Core (Inner Hexagon)" as CoreHexagon {
     }
 
     package "Application Services" as ApplicationServices {
-        class InvoicingApplicationService implements IRegisterInvoiceUseCase, IIssueInvoiceSunatUseCase, IGetInvoiceUseCase
+        class InvoicingApplicationService implements IRegisterInvoiceUseCase, IIssueInvoiceSunatUseCase
+        class NoteApplicationService implements IIssueNoteSunatUseCase
+        class SummaryVoidApplicationService implements IProcessDailySummaryUseCase, ISendVoidCommunicationUseCase
+        class LedgerApplicationService implements IGenerateLedgersUseCase
         class MigrationApplicationService implements IMigrateLegacyBatchUseCase
     }
 
     package "Domain Model (Entities, Aggregates & Invariants)" as PureDomain {
+        entity ElectronicDocument
         entity Invoice
-        entity InvoiceLine
+        entity CreditDebitNote
+        entity DocumentItemLine
         entity InventoryMovement
         entity MigrationBatch
         entity Product
         class Ruc <<ValueObject>>
-        class TaxSummary <<ValueObject>>
+        class TaxCalculation <<ValueObject>>
     }
 
     package "Outbound Ports (Driven Interfaces / SPI)" as OutboundPorts {
         interface IInvoiceRepositoryPort {
             +save(invoice: Invoice): void
             +findById(id: UUID): Invoice
+        }
+        interface INoteRepositoryPort {
+            +save(note: CreditDebitNote): void
+            +findById(id: UUID): CreditDebitNote
         }
         interface IInventoryMovementRepositoryPort {
             +save(movement: InventoryMovement): void
@@ -57,12 +76,18 @@ package "Application Core (Inner Hexagon)" as CoreHexagon {
         }
         interface IUblGeneratorPort {
             +generateInvoiceXml(invoice: Invoice): String
+            +generateNoteXml(note: CreditDebitNote): String
+        }
+        interface IXmlValidatorPort {
+            +validateAgainstXsd(xml: String, schema: String): Boolean
         }
         interface IDigitalSignaturePort {
             +signDocument(xml: String): SignatureResult
         }
         interface ISunatOsePort {
             +sendBill(zipContent: byte[], fileName: String): CdrResult
+            +sendSummary(zipContent: byte[], fileName: String): TicketResult
+            +getStatus(ticket: String): CdrResult
         }
         interface IDocumentStoragePort {
             +storeDocument(key: String, payload: byte[]): String
@@ -73,8 +98,9 @@ package "Application Core (Inner Hexagon)" as CoreHexagon {
 
 package "Secondary Driven Adapters (Outbound)" as OutboundAdapters {
     component [PostgreSQL / SQLite Database Adapter] as DbAdapter
-    component [OASIS UBL 2.1 XML Generator Adapter] as UblAdapter
-    component [XAdES-BES PKCS#12 Signer Adapter] as SignerAdapter
+    component [UblXsdGeneratorAdapter (Generated Classes)] as UblAdapter
+    component [LxmlXsdValidatorAdapter] as XsdValidatorAdapter
+    component [XMLDSig Enveloped Signer Adapter] as SignerAdapter
     component [SOAP OSE/SUNAT Client Adapter] as SunatSoapAdapter
     component [Local Encrypted FS / S3 Storage Adapter] as StorageAdapter
 }
@@ -91,10 +117,12 @@ ApplicationServices --> OutboundPorts : uses
 
 ' Outbound implementations (Dependency Inversion)
 DbAdapter .up.|> IInvoiceRepositoryPort
+DbAdapter .up.|> INoteRepositoryPort
 DbAdapter .up.|> IInventoryMovementRepositoryPort
 DbAdapter .up.|> IMigrationBatchRepositoryPort
 
 UblAdapter .up.|> IUblGeneratorPort
+XsdValidatorAdapter .up.|> IXmlValidatorPort
 SignerAdapter .up.|> IDigitalSignaturePort
 SunatSoapAdapter .up.|> ISunatOsePort
 StorageAdapter .up.|> IDocumentStoragePort

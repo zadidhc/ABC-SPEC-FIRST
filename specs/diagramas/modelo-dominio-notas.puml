@@ -1,0 +1,105 @@
+@startuml
+!theme plain
+skinparam componentStyle uml2
+skinparam packageStyle rectangle
+skinparam handwritten false
+skinparam classAttributeIconSize 0
+
+title Modelo de Dominio — Comprobantes y Notas de Crédito / Débito (Catálogos 09 y 10)
+
+abstract class ElectronicDocument {
+    +id: UUID
+    +series: String
+    +number: Integer
+    +documentTypeCode: String
+    +issueDate: LocalDate
+    +issueTime: LocalTime
+    +currency: CurrencyCode
+    +status: DocumentStatus
+    +totalTaxableAmount: Decimal
+    +totalExemptAmount: Decimal
+    +totalInafectAmount: Decimal
+    +baseIsc: Decimal
+    +totalIsc: Decimal
+    +baseIgv: Decimal
+    +totalIgv: Decimal
+    +lineExtensionAmount: Decimal
+    +payableAmount: Decimal
+    +digestValue: String
+    +cdrTicket: String
+    +cdrResponseCode: String
+}
+
+class Invoice {
+    +operationTypeCode: String
+    +paymentTerms: PaymentTerms
+    +validateIssuerCustomerConsistency(): void
+}
+
+class CreditDebitNote {
+    +noteTypeCode: String
+    +referencedDocumentType: String
+    +referencedDocumentSeriesNumber: String
+    +discrepancyCode: String
+    +discrepancyDescription: String
+    +validateReferencedDocument(): void
+    +validateDiscrepancyReason(): void
+}
+
+class DocumentItemLine {
+    +lineNumber: Integer
+    +quantity: Decimal
+    +unitCode: UnitCode
+    +description: String
+    +unitValue: Decimal
+    +unitPriceWithTax: Decimal
+    +taxExemptionReasonCode: String
+    +igvRate: Decimal
+    +igvAmount: Decimal
+    +isSubjectToIsc: Boolean
+    +iscSystem: IscCalculationMethodCode
+    +iscRate: Decimal
+    +iscFixedAmount: Decimal
+    +iscAmount: Decimal
+    +lineExtensionAmount: Decimal
+}
+
+class Customer {
+    +identityDocumentType: String
+    +identityDocumentNumber: String
+    +legalName: String
+    +address: String
+    +email: String
+}
+
+enum Catalog09CreditNoteReason <<enum>> {
+    ANULACION_OPERACION = "01"
+    ANULACION_POR_ERROR_EN_RUC = "02"
+    CORRECCION_POR_ERROR_EN_DESCRIPCION = "03"
+    DESCUENTO_GLOBAL = "04"
+    DESCUENTO_POR_ITEM = "05"
+    DEVOLUCION_TOTAL = "06"
+    DEVOLUCION_POR_ITEM = "07"
+    BONIFICACION = "08"
+    DISMINUCION_EN_EL_VALOR = "09"
+    OTROS_CONCEPTOS = "10"
+}
+
+enum Catalog10DebitNoteReason <<enum>> {
+    INTERESES_POR_MORA = "01"
+    AUMENTO_EN_EL_VALOR = "02"
+    PENALIDADES_OTROS = "03"
+}
+
+ElectronicDocument <|-- Invoice
+ElectronicDocument <|-- CreditDebitNote
+
+ElectronicDocument "1" *-- "1..*" DocumentItemLine : compone
+Customer "1" <-- "0..*" ElectronicDocument : adquiere
+
+Invoice "1" <-- "0..*" CreditDebitNote : rectifica o ajusta
+CreditDebitNote ..> Catalog09CreditNoteReason : motivo si tipo=07
+CreditDebitNote ..> Catalog10DebitNoteReason : motivo si tipo=08
+
+@enduml
+

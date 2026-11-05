@@ -1,0 +1,19 @@
+{
+  "name": "abc-spec-first-main",
+  "version": "1.0.0",
+  "description": "[![OpenAPI 3.1](https://img.shields.io/badge/OpenAPI-3.1.0-green.svg)](specs/05-endpoints-openapi.yaml) [![UBL Standard](https://img.shields.io/badge/OASIS%20UBL-2.1-blue.svg)](https://docs.oasis-open.org/ubl/os-UBL-2.1/) [![SUNAT Compliance](https://img.shields.io/badge/SUNAT-RS%20097--2012-red.svg)](specs/06-matriz-sunat-ubl.md) [![Architecture](https://img.shields.io/badge/Architecture-MVC%20%E2%86%92%20Hexagonal-orange.svg)](specs/04-arquitectura.md) [![Phase](https://img.shields.io/badge/Phase-Spec--First%20(Phase%201)-purple.svg)](#entregables-técnicos)",
+  "main": "index.js",
+  "scripts": {
+    "lint:specs": "redocly lint specs/05-endpoints-openapi.yaml",
+    "bundle:specs": "redocly bundle specs/05-endpoints-openapi.yaml -o dist/openapi-bundled.yaml",
+    "test:contracts": "python -m pytest -v tests_specs",
+    "validate:specs": "redocly lint specs/05-endpoints-openapi.yaml && redocly bundle specs/05-endpoints-openapi.yaml -o dist/openapi-bundled.yaml && python -m pytest -v tests_specs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@redocly/cli": "^2.75.0"
+  }
+}

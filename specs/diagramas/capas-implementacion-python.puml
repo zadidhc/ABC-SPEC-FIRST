@@ -1,0 +1,60 @@
+@startuml
+!theme plain
+skinparam componentStyle uml2
+skinparam packageStyle rectangle
+skinparam handwritten false
+
+title Arquitectura Hexagonal de Implementación en Python (abc_cpe)
+
+package "Capa de Dominio (Pure Domain Core)" as DominioPkg {
+    component [catalogos.py\n(Enums Tipos, Afectación, ISC, Unidades)] as Catalogos
+    component [modelos.py\n(Comprobante, Emisor, Cliente, Linea)] as Modelos
+    component [calculo.py\n(Motor Tributario Decimal)] as Calculo
+    component [validaciones.py\n(Reglas VAL-* y Algoritmo RUC)] as Validaciones
+    component [errores.py\n(ReglaNegocioError, ValidationError)] as Errores
+    component [monto_en_letras.py\n(Leyenda 1000 en palabras)] as Letras
+    
+    note bottom of DominioPkg
+      REGLA ESTRICTA DE INDEPENDENCIA:
+      No importa lxml, xsdata, ubl_generado,
+      ni frameworks web o librerías de infraestructura.
+    end note
+}
+
+package "Capa de Aplicación (Application Core)" as AplicacionPkg {
+    component [puertos.py\n(GeneradorUblPort, ValidadorXmlPort)] as Puertos
+    component [servicio.py\n(GenerarXmlComprobanteService)] as Servicio
+    
+    Servicio --> Puertos : utiliza interfaces
+    Servicio --> Modelos : orquesta
+    Servicio --> Calculo : invoca
+    Servicio --> Validaciones : ejecuta
+}
+
+package "Capa de Infraestructura (Adapters)" as InfraestructuraPkg {
+    component [generador_ubl.py\n(GeneradorUblAdapter con xsdata)] as GeneradorUbl
+    component [validador_xsd.py\n(ValidadorXsdLxml con lxml.etree)] as ValidadorXsd
+    
+    GeneradorUbl ..|> Puertos : implementa GeneradorUblPort
+    ValidadorXsd ..|> Puertos : implementa ValidadorXmlPort
+    GeneradorUbl --> Modelos : lee entidades
+}
+
+package "Módulos Autogenerados (OASIS UBL 2.1 XSD)" as UblGeneradoPkg {
+    component [abc_cpe.ubl_generado\n(Clases generadas con xsdata)] as UblGenerado
+    GeneradorUbl --> UblGenerado : instancia y serializa
+}
+
+package "Tests Automatizados (Pytest & AST Architecture)" as TestsPkg {
+    component [test_calculo.py] as TestCalc
+    component [test_validaciones.py] as TestVal
+    component [test_generacion_xml.py] as TestXml
+    component [test_xsd.py] as TestXsd
+    component [test_arquitectura.py\n(Verificación AST de importaciones)] as TestArq
+    
+    TestArq ..> DominioPkg : valida aislamiento
+    TestArq ..> AplicacionPkg : valida aislamiento
+}
+
+@enduml
+
