@@ -1,20 +1,20 @@
-# INFORME TÉCNICO FINAL DE ARQUITECTURA DE SOFTWARE (FASE 1 — SPEC-FIRST)
+# INFORME TÉCNICO FINAL DE ARQUITECTURA DE SOFTWARE — FASES 1 Y 2
 
 **Entidad Académica:** Universidad Nacional Agraria de la Selva — Facultad de Ingeniería en Informática y Sistemas  
 **Curso:** Arquitectura de Software  
 **Caso de Estudio:** ABC Software Corp — Sistema de Facturación Electrónica y Migración de Almacén  
-**Fecha:** 22 de octubre de 2026  
+**Fechas:** 22 de octubre de 2026 (Fase 1) y 5 de noviembre de 2026 (Fase 2)  
 **Autor:** Senior Software Architect  
-**Estado:** INFORME TÉCNICO FINAL CONCLUIDO  
+**Estado:** Fase 1 especificada y Fase 2 implementada y validada localmente  
 **Repositorio Oficial:** [https://github.com/zadidhc/ABC-SPEC-FIRST](https://github.com/zadidhc/ABC-SPEC-FIRST)
 
 ---
 
 ## 1. Resumen Ejecutivo
 
-El presente informe consolida los resultados técnicos de la **Fase 1 (Spec-First)** desarrollada para la empresa **ABC Software Corp**. El objetivo central consistió en diseñar la arquitectura técnica, modelos de dominio, contratos de interfaz y matrices de cumplimiento normativo necesarios para reemplazar un software básico e informal de almacén por un sistema formal de emisión electrónica compatible con el estándar internacional **OASIS UBL 2.1** y las resoluciones de la **SUNAT** (**RS N° 097-2012/SUNAT** y **RS N° 234-2006/SUNAT**), garantizando además la migración e inmutabilidad de los datos históricos.
+El presente informe integra los resultados de la **Fase 1 (Spec-First)** y la **Fase 2 (implementación del generador XML Invoice UBL 2.1)** para la empresa **ABC Software Corp**. El objetivo central consistió en diseñar la arquitectura técnica, modelos de dominio, contratos de interfaz y matrices de cumplimiento normativo necesarios para reemplazar un software básico e informal de almacén por un sistema formal de emisión electrónica compatible con el estándar internacional **OASIS UBL 2.1** y las resoluciones de la **SUNAT** (**RS N° 097-2012/SUNAT** y **RS N° 234-2006/SUNAT**), garantizando además la migración e inmutabilidad de los datos históricos.
 
-Siguiendo el rigor de la metodología *Spec-First*, todo el diseño fue formalizado y validado sintácticamente antes de escribir una sola línea de código de implementación de aplicación, base de datos o interfaces gráficas.
+En la Fase 1 se formalizaron las especificaciones y contratos antes de implementar el software. Posteriormente, en la Fase 2, se desarrolló en Python el generador de documentos XML UBL 2.1 y se comprobó su funcionamiento mediante pruebas automatizadas.
 
 ---
 
@@ -91,6 +91,121 @@ El proyecto se estructuró conforme al principio de prioridad de fuentes estable
 
 ---
 
-## 5. Conclusión General
+## 5. Conclusión de la Fase 1
 
 La Fase 1 Spec-First se completó satisfactoriamente, proveyendo a **ABC Software Corp** de un conjunto de especificaciones técnicas consistentes, formalmente verificadas, con trazabilidad normativa rigurosa y preparadas para la fase de implementación de software.
+
+---
+
+## 6. Implementación de la Fase 2 — XML Invoice UBL 2.1
+
+**Fecha de entrega:** 05 de noviembre de 2026.
+
+### 6.1 Objetivo
+
+Implementar en Python la generación de documentos XML de comprobantes electrónicos utilizando las clases obtenidas a partir del esquema OASIS Invoice XSD 2.1.
+
+La implementación debe representar los datos del dominio, validar sus reglas, calcular los importes y producir un documento XML que supere la validación estructural XSD.
+
+### 6.2 Tecnologías utilizadas
+
+- Python como lenguaje de implementación.
+- OASIS UBL 2.1 como estándar estructural del XML.
+- xsdata para generar clases Python desde los esquemas XSD.
+- lxml para serialización y validación estructural.
+- Decimal para cálculos monetarios.
+- pytest para pruebas unitarias y de integración.
+
+### 6.3 Organización de la implementación
+
+El código se encuentra en el directorio `implementacion/abc_cpe/`.
+
+**Dominio:**
+- `dominio/modelos.py`: modelos de comprobante, emisor, cliente y líneas.
+- `dominio/catalogos.py`: tipos de comprobante, documentos y categorías tributarias.
+- `dominio/validaciones.py`: reglas de negocio y validación de datos.
+- `dominio/calculo.py`: cálculo de importes e impuestos.
+- `dominio/errores.py`: errores del dominio.
+
+**Aplicación:**
+- `aplicacion/servicio.py`: servicio `GenerarXmlComprobanteService`.
+- `aplicacion/puertos.py`: interfaces para desacoplar la generación y validación.
+
+**Infraestructura:**
+- `infraestructura/generador_ubl.py`: construcción y serialización del XML.
+- `infraestructura/validador_xsd.py`: validación mediante lxml.
+
+**Artefactos derivados del esquema:**
+- `implementacion/abc_cpe/ubl_generado/`: clases generadas desde XSD.
+- `implementacion/xsd/maindoc/UBL-Invoice-2.1.xsd`: esquema principal Invoice.
+- `implementacion/xsd/common/`: esquemas de componentes y tipos compartidos.
+
+### 6.4 Flujo de generación
+
+1. Construir un comprobante a partir de los modelos del dominio.
+2. Verificar emisor, cliente, serie, correlativo y líneas de detalle.
+3. Validar cantidades, precios y reglas de negocio.
+4. Calcular bases imponibles, impuestos y totales.
+5. Construir el objeto UBL Invoice 2.1.
+6. Serializar el objeto a XML.
+7. Validar el documento generado contra Invoice XSD 2.1.
+
+El servicio devuelve el nombre del comprobante, los bytes XML y el resultado del cálculo.
+
+### 6.5 Pruebas automatizadas
+
+Las pruebas se encuentran en `tests_specs/`.
+
+- `test_generacion_xml.py`: pruebas básicas de generación y rechazo de entradas inválidas.
+- `test_xsd_integration.py`: pruebas de generación completa, estructura UBL, impuestos y validación XSD.
+- `test_domain_validation.py`: reglas del dominio.
+- `test_financial_correctness.py`: cálculos, redondeos y coherencia con XML.
+- `test_adversarial.py`: entradas inválidas y casos especiales.
+- `test_specs_validation.py`: validación de especificaciones y contratos.
+
+**Resultados verificados localmente:**
+- 49 pruebas específicas de generación XML e integración XSD aprobadas.
+- 225 pruebas automatizadas aprobadas en la suite completa.
+- Sin fallos ni advertencias de pytest en la última ejecución completa.
+
+### 6.6 Ejecución de las pruebas
+
+Desde la raíz del proyecto, en PowerShell:
+
+Instalar dependencias:
+
+`.\.venv\Scripts\python.exe -m pip install -r requirements.txt`
+
+Configurar la ruta del código:
+
+`$env:PYTHONPATH = (Resolve-Path .\implementacion).Path`
+
+Ejecutar las pruebas de generación XML:
+
+`.\.venv\Scripts\python.exe -m pytest -v tests_specs/test_generacion_xml.py tests_specs/test_xsd_integration.py`
+
+Ejecutar la suite completa:
+
+`.\.venv\Scripts\python.exe -m pytest -q tests_specs`
+
+### 6.7 Alcance y limitaciones
+
+La implementación permite generar documentos XML Invoice UBL 2.1 y comprobar su estructura mediante el XSD.
+
+No incluye firma digital criptográfica, transmisión a SUNAT/OSE ni procesamiento de CDR.
+
+La conformidad con el esquema XSD no constituye una aceptación tributaria de SUNAT.
+
+La fórmula del ISC al precio de venta al público permanece pendiente de verificación normativa. El ICBPER figura en el diseño de la Fase 1, pero no forma parte del alcance implementado y verificado del generador actual.
+
+---
+
+## 7. Conclusión general de las Fases 1 y 2
+
+La Fase 1 estableció las especificaciones de requisitos, arquitectura, dominio, API y trazabilidad normativa del sistema ABC Software Corp.
+
+La Fase 2 convirtió parte de ese diseño en una implementación ejecutable en Python, capaz de construir documentos XML Invoice UBL 2.1 a partir de modelos del dominio y validarlos contra el esquema XSD correspondiente.
+
+Los resultados locales de 49 pruebas específicas y 225 pruebas totales aprobadas respaldan el funcionamiento de los casos implementados. No representan certificación tributaria ni sustituyen las validaciones oficiales de SUNAT.
+
+La implementación, las pruebas y la documentación se publicaron en la rama principal `main` del repositorio ABC-SPEC-FIRST.
